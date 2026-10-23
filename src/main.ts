@@ -474,9 +474,10 @@ $('import-btn').addEventListener('click', async () => {
 // ---------- files & export ----------
 
 function newDrawing() {
-  if (editor.doc.atoms.length && !confirm('Start a new drawing? Unsaved changes in this drawing will be lost (you can still undo).')) return;
+  const hadContent = editor.doc.atoms.length > 0 || editor.doc.arrows.length > 0 || editor.doc.texts.length > 0;
   editor.clear();
   editor.fitView();
+  if (hadContent) toast(`Canvas cleared. Press ${mod}Z to bring it back.`);
 }
 
 async function openFile() {
