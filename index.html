@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="MolCanvas: a free, modern chemical structure editor for organic and polymer chemists." />
+    <title>MolCanvas</title>
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar" data-tauri-drag-region>
+        <div class="brand" data-tauri-drag-region>
+          <img src="./icon.svg" alt="" width="22" height="22" />
+          <span>MolCanvas</span>
+        </div>
+        <div class="group" id="file-actions"></div>
+        <div class="group" id="edit-actions"></div>
+        <div class="group" id="transform-actions"></div>
+        <div class="spacer" data-tauri-drag-region></div>
+        <div class="group" id="view-actions"></div>
+      </header>
+
+      <nav class="tools" id="tools" aria-label="Drawing tools"></nav>
+
+      <aside class="library" id="library">
+        <div class="lib-search">
+          <span class="lib-search-icon" id="lib-search-icon"></span>
+          <input id="lib-filter" type="search" placeholder="Search presets: styrene, PMMA, Boc…" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="chips" id="lib-cats"></div>
+        <div class="lib-grid" id="lib-grid"></div>
+      </aside>
+
+      <main class="canvas-wrap" id="canvas-wrap">
+        <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="empty-hint" id="empty-hint">
+          <h2>Start drawing</h2>
+          <p>Click anywhere with the bond tool, drop a ring, or pick a molecule or polymer from the library.</p>
+          <p class="keys"><kbd>Hover</kbd> + <kbd>N</kbd> <kbd>O</kbd> <kbd>S</kbd>… sets elements · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> on a bond sets its order · <kbd>Space</kbd> + drag pans · pinch to zoom</p>
+        </div>
+        <div class="statusbar" id="status"></div>
+        <div class="toast" id="toast"></div>
+      </main>
+
+      <aside class="inspector" id="inspector">
+        <section>
+          <h3 id="scope-title">Properties</h3>
+          <div id="props"></div>
+        </section>
+        <section id="polymer-section">
+          <h3>Polymer tools</h3>
+          <div id="polymer"></div>
+        </section>
+        <section>
+          <h3>SMILES</h3>
+          <div class="smiles-box">
+            <code id="smiles"></code>
+            <button class="mini" id="copy-smiles" title="Copy SMILES">Copy</button>
+          </div>
+          <div class="name-row">
+            <button class="mini wide" id="lookup-name" title="Look the structure up on PubChem (internet)">Identify name (PubChem)</button>
+            <div id="name-out" class="muted small"></div>
+          </div>
+        </section>
+        <section>
+          <h3>Add from text</h3>
+          <textarea id="import-text" rows="3" placeholder="SMILES, MOL file, or a name (e.g. ibuprofen)" spellcheck="false"></textarea>
+          <button class="mini wide primary" id="import-btn">Add to canvas</button>
+        </section>
+        <footer class="credit">MolCanvas · free & open source · by Ashif</footer>
+      </aside>
+    </div>
+
+    <div class="popover" id="ptable" hidden></div>
+    <div class="menu" id="export-menu" hidden></div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

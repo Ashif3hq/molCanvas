@@ -1,0 +1,28 @@
+{
+  "name": "molcanvas",
+  "version": "0.1.0",
+  "description": "MolCanvas: a free, modern chemical structure editor for organic and polymer chemists",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p . && vite build",
+    "preview": "vite preview",
+    "check:presets": "tsx scripts/check-presets.ts",
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build"
+  },
+  "author": "Ashif",
+  "license": "MIT",
+  "dependencies": {
+    "openchemlib": "^9.25.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "private": true,
+  "type": "module"
+}
