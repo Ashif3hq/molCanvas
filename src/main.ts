@@ -68,7 +68,38 @@ function toast(msg: string) {
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => el.classList.remove('show'), 2600);
 }
-editor.onStatus = (msg) => { $('status').textContent = msg; };
+// ---------- info bar: explains whatever is under the pointer ----------
+
+let toolHint = { title: '', detail: '' };
+let warnUntil = 0;
+function showInfo(title: string, detail: string, warn = false) {
+  $('info-title').textContent = title;
+  $('info-detail').textContent = detail;
+  $('status').classList.toggle('warn', warn);
+}
+function splitHint(msg: string) {
+  const i = msg.indexOf(':');
+  return i > 0 && i < 40 ? { title: msg.slice(0, i), detail: msg.slice(i + 1).trim() } : { title: 'Tip', detail: msg };
+}
+editor.onStatus = (msg) => {
+  toolHint = splitHint(msg);
+  if (Date.now() > warnUntil) showInfo(toolHint.title, toolHint.detail);
+};
+editor.onHover = (info) => {
+  if (Date.now() < warnUntil && !info?.warn) return;
+  if (info) showInfo(info.title, info.detail, !!info.warn);
+  else showInfo(toolHint.title, toolHint.detail);
+};
+editor.onWarn = (msg) => {
+  warnUntil = Date.now() + 3500;
+  showInfo('Not allowed', msg, true);
+  toast(msg);
+};
+/** Show a description while the pointer is over a toolbar button or library card. */
+function explainOnHover(el: HTMLElement, title: string, detail: string) {
+  el.addEventListener('mouseenter', () => showInfo(title, detail));
+  el.addEventListener('mouseleave', () => showInfo(toolHint.title, toolHint.detail));
+}
 
 // ---------- top bar ----------
 
@@ -162,6 +193,34 @@ const TOOL_DEFS: (ToolDef | 'sep')[] = [
   { key: 'text', icon: 'text', title: 'Text & labels (T). Click an atom to type an element or group (OMe, CO2H, Boc…)', tool: { kind: 'text' } },
 ];
 
+const TOOL_EXPLAIN: Record<string, string> = {
+  select: 'Click to select, drag to box-select, drag a selection to move it, double-click to select a whole molecule. Shortcut V.',
+  erase: 'Click or drag over atoms, bonds, arrows and text to delete them. Shortcut E.',
+  b1: 'Single (σ) bond. Click an atom to grow a bond, drag to aim it, click an existing bond to cycle single → double → triple.',
+  b2: 'Double bond: one σ and one π bond, as in alkenes (C=C) and carbonyls (C=O).',
+  b3: 'Triple bond: one σ and two π bonds, as in alkynes (C≡C) and nitriles (C≡N). The atoms become linear (sp).',
+  wedge: 'Stereo bond pointing towards you. The narrow end sits on the stereocentre. Click a wedge again to flip it.',
+  hash: 'Stereo bond pointing away from you. The narrow end sits on the stereocentre. Click again to flip it.',
+  wavy: 'Bond with unknown or mixed stereochemistry (e.g. a racemic centre or E/Z mixture).',
+  chain: 'Drag to draw a zig-zag carbon chain; the bar shows how many bonds. Shortcut G.',
+  benzene: 'Aromatic six-membered ring with alternating double bonds. Click a bond to fuse rings (naphthalene), or an atom to attach.',
+  r3: 'Three-membered ring (cyclopropane / epoxide skeleton).', r4: 'Four-membered ring (cyclobutane, β-lactam skeleton).',
+  r5: 'Five-membered ring (cyclopentane, furanose, pyrrolidine skeleton).', r6: 'Six-membered ring (cyclohexane, pyranose, piperidine skeleton).',
+  r7: 'Seven-membered ring.', r8: 'Eight-membered ring.',
+  'el-*': 'Polymer end (*): marks where a repeat unit continues. Each * has exactly one bond and MolCanvas draws a bracket with n across it.',
+  ptable: 'Pick any element from the periodic table.',
+  plus: 'Add a positive formal charge (e.g. ammonium N⁺, carbocation C⁺). The allowed number of bonds changes with charge.',
+  minus: 'Add a negative formal charge (e.g. alkoxide O⁻, carbanion C⁻).',
+  arrow: 'Reaction arrow: reactants → products. Drag to draw; it snaps to 15°. Shortcut A.',
+  equilibrium: 'Equilibrium arrows for reversible reactions.', retro: 'Retrosynthesis arrow: target ⇒ precursors.',
+  resonance: 'Double-headed arrow between resonance structures.',
+  text: 'Add labels and conditions. Click an atom to type an element or a group such as OMe, CO2H, Boc or Ph. Shortcut T.',
+};
+for (const el of ['C', 'H', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I']) {
+  const v: Record<string, string> = { C: '4 bonds', H: '1 bond', N: '3 bonds (4 as N⁺)', O: '2 bonds (3 as O⁺)', S: '2, 4 or 6 bonds', P: '3 or 5 bonds', F: '1 bond', Cl: '1 bond (up to 7 in oxyanions)', Br: '1 bond (up to 7 in oxyanions)', I: '1 bond (up to 7, e.g. IBX)' };
+  TOOL_EXPLAIN[`el-${el}`] = `Valence: ${v[el]}. Click an atom to change it or empty space to add one. Missing bonds are filled with implicit hydrogens.`;
+}
+
 const toolButtons = new Map<string, HTMLButtonElement>();
 const toolsEl = $('tools');
 for (const def of TOOL_DEFS) {
@@ -175,6 +234,8 @@ for (const def of TOOL_DEFS) {
     if (def.key === 'ptable') { showPeriodicTable(e.currentTarget as HTMLElement); return; }
     editor.setTool(def.tool);
   });
+  const name = def.title.replace(/\s*\(.*?\)/, '').split('.')[0];
+  explainOnHover(b, name, TOOL_EXPLAIN[def.key] ?? def.title);
   toolButtons.set(def.key, b);
   toolsEl.append(b);
 }
@@ -321,6 +382,10 @@ function renderLibrary() {
     card.dataset.idx = String(i);
     card.title = `${p.name}${p.aka ? ` · ${p.aka}` : ''}\n${p.smiles}\n\nClick to stamp, double-click to insert at centre.`;
     card.innerHTML = `<div class="thumb"></div><div class="name">${p.name}</div>`;
+    const kindHelp = p.kind === 'group' ? 'Substituent: click an atom on the canvas to attach it (R marks the attachment point).'
+      : p.kind === 'polymer' ? 'Polymer repeat unit: the brackets mark where the chain continues; n is the degree of polymerisation.'
+      : 'Click to stamp it on the canvas, double-click to insert it.';
+    explainOnHover(card, p.name, `${p.aka ? `${p.aka}. ` : ''}${kindHelp} SMILES ${p.smiles}`);
     card.addEventListener('click', () => {
       editor.setTool({ kind: 'template', preset: p, frag: presetFrag(p) });
       toast(p.kind === 'group' ? `${p.name}: click an atom to attach it.` : `${p.name}: click on the canvas to place it.`);

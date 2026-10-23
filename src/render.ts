@@ -1,7 +1,7 @@
 // SVG renderer for MolCanvas documents. Produces markup strings so the same code
 // drives the live canvas, library thumbnails and SVG/PNG export.
 import { Analysis, analyze } from './chem';
-import { Atom, Bond, BOND, Doc, Point, Arrow, TextItem, fragments } from './model';
+import { Atom, Bond, BOND, Doc, Point, Arrow, TextItem, fragments, repeatUnitEnds } from './model';
 
 export interface Theme {
   fg: string;
@@ -68,10 +68,10 @@ function chargeText(c: number): string {
   return `${mag > 1 ? mag : ''}${c > 0 ? '+' : '−'}`;
 }
 
-export function labelInfo(doc: Doc, atom: Atom, nbrs: Atom[], an: Analysis): LabelInfo {
+export function labelInfo(doc: Doc, atom: Atom, nbrs: Atom[], an: Analysis, bracketed = false): LabelInfo {
   const h = an.hCount.get(atom.id) ?? 0;
   let shown = atom.el !== 'C' || nbrs.length === 0 || !!atom.iso;
-  if (atom.el === '*') shown = !(nbrs.length === 1);
+  if (atom.el === '*') shown = !bracketed;
   let sx = 0;
   for (const n of nbrs) sx += n.x - atom.x;
   const hSide: 'left' | 'right' = nbrs.length && sx > 1 ? 'left' : 'right';
@@ -112,7 +112,8 @@ function buildCtx(doc: Doc, opts: RenderOpts): Ctx {
     nbrs.get(B.id)!.push(A);
   }
   const labels = new Map<number, LabelInfo>();
-  for (const a of doc.atoms) labels.set(a.id, labelInfo(doc, a, nbrs.get(a.id)!, an));
+  const ends = repeatUnitEnds(doc);
+  for (const a of doc.atoms) labels.set(a.id, labelInfo(doc, a, nbrs.get(a.id)!, an, ends.has(a.id)));
   return { doc, opts, an, byId, nbrs, labels };
 }
 
@@ -242,8 +243,9 @@ function bracketsSvg(ctx: Ctx): string {
   let out = '';
   const fg = ctx.opts.theme.fg;
   const frags = fragments(ctx.doc);
+  const ends = repeatUnitEnds(ctx.doc);
   for (const comp of frags) {
-    const stars = comp.map((id) => ctx.byId.get(id)!).filter((a) => a.el === '*' && ctx.nbrs.get(a.id)!.length === 1);
+    const stars = comp.map((id) => ctx.byId.get(id)!).filter((a) => ends.has(a.id));
     if (!stars.length) continue;
     const last = stars.reduce((m, s) => (s.x > m.x ? s : m), stars[0]);
     for (const s of stars) {

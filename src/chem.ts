@@ -1,7 +1,8 @@
 // Chemistry layer: converts between the MolCanvas document and OpenChemLib molecules
 // for valence, rings, formulas, properties, SMILES and MOL files.
 import { Molecule, MoleculeProperties } from 'openchemlib';
-import { BOND, Doc, emptyDoc, fragments, Point } from './model';
+import { BOND, Doc, emptyDoc, fragments, Point, repeatUnitEnds } from './model';
+import { valenceProblems } from './valence';
 
 type Mol = InstanceType<typeof Molecule>;
 
@@ -69,10 +70,8 @@ export function analyze(doc: Doc): Analysis {
     const z = mol.getAtomicNo(i);
     if (z === 0) continue;
     hCount.set(ids[i], mol.getImplicitHydrogens(i));
-    try {
-      if (mol.getFreeValence(i) < 0) badValence.add(ids[i]);
-    } catch { /* ignore */ }
   }
+  for (const p of valenceProblems(doc)) badValence.add(p.atom.id);
   const rings = mol.getRingSet();
   const byAtom = new Map<number, Point>();
   for (const a of doc.atoms) byAtom.set(a.id, a);
@@ -218,7 +217,7 @@ export function properties(doc: Doc): Properties | null {
   if (known && total > 0) {
     for (const [el, n] of hillOrder(counts)) composition.push({ el, pct: (100 * WEIGHTS[el] * n) / total });
   }
-  const isPolymer = doc.atoms.some((a) => a.el === '*');
+  const isPolymer = repeatUnitEnds(doc).size > 0;
   const props: Properties = {
     formula: hillFormula(counts, mol),
     mw: mf.relativeWeight,

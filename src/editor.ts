@@ -10,6 +10,7 @@ import {
 } from './geometry';
 import { renderDoc, RenderOpts, textBox, Theme } from './render';
 import type { Preset } from './presets';
+import { Explanation, explainAtom, explainBond, explainProblem, valenceProblems } from './valence';
 
 export type Tool =
   | { kind: 'select' }
@@ -61,6 +62,12 @@ export class Editor {
   onChange: () => void = () => {};
   onStatus: (msg: string) => void = () => {};
   onToolChange: (t: Tool) => void = () => {};
+  /** Explanation of whatever is under the pointer (null: nothing, show the tool hint). */
+  onHover: (info: Explanation | null) => void = () => {};
+  /** A change was refused because it would break a chemistry rule. */
+  onWarn: (msg: string) => void = () => {};
+  /** Set when the previewed action would break a rule; shown in red and refused on click. */
+  private ghostProblem: string | null = null;
 
   private undoStack: string[] = [];
   private redoStack: string[] = [];
@@ -91,16 +98,70 @@ export class Editor {
     return this.analysisCache.an;
   }
 
-  /** Apply a change with undo support. */
-  commit(mutate: (d: Doc) => void) {
+  /**
+   * Apply a change with undo support. Changes that would push an atom past its valence
+   * (C with 5 bonds, a polymer end with 2…) are refused and explained via onWarn.
+   */
+  commit(mutate: (d: Doc) => void): boolean {
     const before = JSON.stringify(this.doc);
+    const prior = new Map(valenceProblems(this.doc).map((p) => [p.atom.id, p.used]));
     mutate(this.doc);
     const after = JSON.stringify(this.doc);
-    if (before === after) return;
+    if (before === after) return false;
+    const fresh = valenceProblems(this.doc).filter((p) => p.used > (prior.get(p.atom.id) ?? -1));
+    if (fresh.length) {
+      this.doc = JSON.parse(before);
+      this.version++;
+      this.render();
+      this.onWarn(explainProblem(fresh[0]));
+      return false;
+    }
     this.undoStack.push(before);
     if (this.undoStack.length > 300) this.undoStack.shift();
     this.redoStack = [];
     this.changed();
+    return true;
+  }
+
+  /** Why a placement would be refused, or null if it is chemically fine. */
+  private placementProblem(pl: Placement): string | null {
+    const prior = new Map(valenceProblems(this.doc).map((p) => [p.atom.id, p.used]));
+    const d = cloneDoc(this.doc);
+    this.applyPlacement(d, pl);
+    const fresh = valenceProblems(d).filter((p) => p.used > (prior.get(p.atom.id) ?? -1));
+    return fresh.length ? explainProblem(fresh[0]) : null;
+  }
+
+  private setGhost(pl: Placement | null) {
+    this.ghost = pl ? this.ghostOf(pl) : null;
+    this.ghostProblem = pl ? this.placementProblem(pl) : null;
+  }
+
+  /** Plain-language description of an atom or bond for the info bar. */
+  describe(hit: Hit): Explanation | null {
+    if (!hit) return null;
+    const an = this.analysis();
+    if (hit.type === 'atom') {
+      const a = atomById(this.doc, hit.id)!;
+      const inAromatic = this.doc.bonds.some((b) => (b.a === a.id || b.b === a.id) && an.ringCenter.has(b.id));
+      return explainAtom(this.doc, a, an.hCount.get(a.id) ?? 0, inAromatic);
+    }
+    if (hit.type === 'bond') {
+      const b = this.doc.bonds.find((x) => x.id === hit.id)!;
+      return explainBond(this.doc, b, an.ringCenter.has(b.id));
+    }
+    if (hit.type === 'arrow') {
+      const ar = this.doc.arrows.find((x) => x.id === hit.id)!;
+      const what = { forward: 'Reaction arrow: reactants on the left give products on the right.', equilibrium: 'Equilibrium arrows: the reaction runs in both directions.', retro: 'Retrosynthesis arrow: the target (left) can be made from the precursors (right).', resonance: 'Resonance arrow: both structures are contributors to one real molecule.' }[ar.kind];
+      return { title: 'Arrow', detail: `${what} Drag with the Select tool to move it.` };
+    }
+    const t = this.doc.texts.find((x) => x.id === hit.id)!;
+    return { title: 'Text', detail: `“${t.text}”. Double-click to edit. Digits after letters are shown as subscripts.` };
+  }
+
+  private emitHover() {
+    if (this.ghostProblem) this.onHover({ title: 'Not allowed', detail: this.ghostProblem, warn: true });
+    else this.onHover(this.describe(this.hover));
   }
 
   private changed() {
@@ -144,6 +205,7 @@ export class Editor {
   setTool(t: Tool) {
     this.tool = t;
     this.ghost = null;
+    this.ghostProblem = null;
     this.closeInput();
     this.svg.dataset.tool = t.kind;
     this.onToolChange(t);
@@ -226,7 +288,8 @@ export class Editor {
     };
     let html = renderDoc(this.doc, opts);
     if (this.ghost) {
-      html += `<g opacity="0.45" pointer-events="none">${renderDoc(this.ghost, { theme: this.theme, colorAtoms: this.colorAtoms })}</g>`;
+      const theme = this.ghostProblem ? { ...this.theme, fg: this.theme.error } : this.theme;
+      html += `<g opacity="${this.ghostProblem ? 0.6 : 0.45}" pointer-events="none">${renderDoc(this.ghost, { theme, colorAtoms: this.colorAtoms && !this.ghostProblem })}</g>`;
     }
     if (this.drag?.mode === 'rubber' && this.drag.moved) {
       const p = this.pointer, s = this.drag.start;
@@ -273,7 +336,7 @@ export class Editor {
     svg.addEventListener('pointerdown', (e) => this.pointerDown(e));
     svg.addEventListener('pointermove', (e) => this.pointerMove(e));
     svg.addEventListener('pointerup', (e) => this.pointerUp(e));
-    svg.addEventListener('pointerleave', () => { if (!this.drag) { this.hover = null; this.ghost = null; this.render(); } });
+    svg.addEventListener('pointerleave', () => { if (!this.drag) { this.hover = null; this.ghost = null; this.ghostProblem = null; this.render(); this.emitHover(); } });
     svg.addEventListener('dblclick', (e) => this.doubleClick(e));
     svg.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -365,8 +428,9 @@ export class Editor {
       }
       if (drag.mode === 'draw') {
         const pl = this.drawPlacement(drag, p);
-        this.ghost = pl ? this.ghostOf(pl) : null;
-        if (this.tool.kind === 'chain' && pl && 'count' in pl) this.onStatus(`Chain: ${(pl as Placement & { count: number }).count} bonds`);
+        this.setGhost(pl);
+        if (this.ghostProblem) this.emitHover();
+        else if (this.tool.kind === 'chain' && pl && 'count' in pl) this.onHover({ title: 'Chain', detail: `${(pl as Placement & { count: number }).count} bonds. Release to add the chain.` });
         this.render();
         return;
       }
@@ -375,12 +439,16 @@ export class Editor {
       const hit = this.hitTest(p);
       const changed = JSON.stringify(hit) !== JSON.stringify(this.hover);
       this.hover = hit;
-      if (this.tool.kind === 'ring' || this.tool.kind === 'template') {
-        const pl = this.clickPlacement(p, hit);
-        this.ghost = pl ? this.ghostOf(pl) : null;
+      const t = this.tool.kind;
+      const previewOnAtom = (t === 'bond' || t === 'atom' || t === 'chain') && hit?.type === 'atom';
+      if (t === 'ring' || t === 'template' || previewOnAtom) {
+        this.setGhost(this.clickPlacement(p, hit));
         this.render();
-      } else if (changed) {
-        this.render();
+        if (changed || this.ghostProblem) this.emitHover();
+      } else {
+        if (this.ghost) { this.ghost = null; this.ghostProblem = null; this.render(); }
+        else if (changed) this.render();
+        if (changed) this.emitHover();
       }
     }
   }
@@ -391,6 +459,7 @@ export class Editor {
     if (!drag) return;
     const p = this.toWorld(e.clientX, e.clientY);
     this.ghost = null;
+    this.ghostProblem = null;
     const t = this.tool;
     if (drag.mode === 'pan') return;
     if (drag.mode === 'move' && drag.original) {

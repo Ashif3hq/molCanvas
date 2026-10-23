@@ -234,3 +234,19 @@ export function segDist(p: Point, a: Point, b: Point): number {
   t = Math.max(0, Math.min(1, t));
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
+
+/**
+ * Polymer ends that form a repeat unit: '*' atoms with one bond, in molecules that have exactly
+ * two of them. A lone '*' is just an attachment point and is drawn as a plain asterisk.
+ */
+export function repeatUnitEnds(d: Doc): Set<number> {
+  const out = new Set<number>();
+  const degree = new Map<number, number>();
+  for (const b of d.bonds) { degree.set(b.a, (degree.get(b.a) ?? 0) + 1); degree.set(b.b, (degree.get(b.b) ?? 0) + 1); }
+  const byId = new Map(d.atoms.map((a) => [a.id, a]));
+  for (const comp of fragments(d)) {
+    const ends = comp.filter((id) => byId.get(id)!.el === '*' && degree.get(id) === 1);
+    if (ends.length === 2) ends.forEach((id) => out.add(id));
+  }
+  return out;
+}

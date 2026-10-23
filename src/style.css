@@ -9,6 +9,7 @@
   --muted: #6e6e73;
   --accent: #0a84ff;
   --accent-soft: rgba(10, 132, 255, 0.12);
+  --danger: #d70015;
   --hover: rgba(0, 0, 0, 0.05);
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
   --radius: 10px;
@@ -29,6 +30,7 @@
     --muted: #98989f;
     --accent: #0a84ff;
     --accent-soft: rgba(10, 132, 255, 0.22);
+    --danger: #ff6961;
     --hover: rgba(255, 255, 255, 0.07);
     --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
@@ -46,6 +48,7 @@
   --muted: #98989f;
   --accent: #0a84ff;
   --accent-soft: rgba(10, 132, 255, 0.22);
+  --danger: #ff6961;
   --hover: rgba(255, 255, 255, 0.07);
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
@@ -215,18 +218,29 @@ button, input, textarea { font: inherit; color: inherit; }
 #canvas[data-tool='select'] { cursor: default; }
 #canvas[data-tool='text'] { cursor: text; }
 #canvas text { user-select: none; -webkit-user-select: none; }
-.statusbar {
+.infobar {
   position: absolute;
   left: 12px;
-  bottom: 10px;
   right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  background: var(--panel);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
   pointer-events: none;
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 12.5px;
+  line-height: 1.45;
+  min-height: 36px;
 }
+.infobar b { flex: none; font-weight: 650; }
+.infobar span { color: var(--muted); min-width: 0; }
+.infobar.warn { border-left-color: var(--danger); }
+.infobar.warn b { color: var(--danger); }
 .empty-hint {
   position: absolute;
   top: 50%;
