@@ -3,6 +3,10 @@
 **A free, modern chemical structure editor for organic and polymer chemists.**
 Native on macOS (Apple Silicon) and also runs in any browser.
 
+### [▶ Try MolCanvas in your browser](https://ashif3hq.github.io/molCanvas/) · [Download for Mac](../../releases/latest)
+
+No install or sign-up needed: the web version runs entirely in your browser.
+
 ![MolCanvas screenshot](docs/screenshot.png)
 
 MolCanvas is a lightweight, open-source alternative to commercial drawing tools. It focuses on
@@ -81,7 +85,8 @@ npm run check:presets  # validates every preset structure
 | `src-tauri/` | The [Tauri](https://tauri.app) desktop shell (small native app using the system WebKit) |
 
 The macOS build runs on GitHub's Apple Silicon runners (`.github/workflows/macos.yml`), and the
-web version is deployed to GitHub Pages (`.github/workflows/pages.yml`).
+web version is published to the `gh-pages` branch and served by GitHub Pages
+(`.github/workflows/pages.yml`).
 
 ## Roadmap
 
