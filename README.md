@@ -42,8 +42,14 @@ slide deck or lab notebook.
 Grab the latest `.dmg` from the [Releases](../../releases) page (or from the **Actions** tab:
 open the latest *macOS app* run and download the `MolCanvas-macOS-arm64` artifact).
 
-The app is not notarised yet, so the first time you open it macOS will warn you. Right-click
-the app in Applications and choose **Open**, or run:
+The app is ad-hoc signed but not notarised by Apple yet, so macOS warns you the first time:
+
+1. Open the `.dmg` and drag **MolCanvas** into **Applications**.
+2. In Applications, right-click MolCanvas and choose **Open**, then **Open** again.
+
+If macOS says the app **"is damaged and can't be opened"** (this happens with some browsers,
+which mark downloads as quarantined), remove the quarantine flag once in Terminal and open it
+normally:
 
 ```sh
 xattr -cr /Applications/MolCanvas.app

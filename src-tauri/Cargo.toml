@@ -1,6 +1,6 @@
 [package]
 name = "molcanvas"
-version = "0.1.0"
+version = "0.1.1"
 description = "MolCanvas: a free, modern chemical structure editor"
 authors = ["Ashif"]
 license = "MIT"
