@@ -48,6 +48,10 @@
           <h3 id="scope-title">Properties</h3>
           <div id="props"></div>
         </section>
+        <section id="solubility-section">
+          <h3>Solubility parameters</h3>
+          <div id="solubility"></div>
+        </section>
         <section id="polymer-section">
           <h3>Polymer tools</h3>
           <div id="polymer"></div>
@@ -62,6 +66,14 @@
             <button class="mini wide" id="lookup-name" title="Look the structure up on PubChem (internet)">Identify name (PubChem)</button>
             <div id="name-out" class="muted small"></div>
           </div>
+        </section>
+        <section>
+          <h3>Molecular modelling</h3>
+          <div class="btn-row">
+            <button class="mini" id="copy-3d" title="Copy a 3D MOL block with hydrogens (MMFF94s+ minimised)">Copy 3D MOL</button>
+            <button class="mini" id="copy-2d" title="Copy the 2D MOL block (V2000)">Copy 2D MOL</button>
+          </div>
+          <div class="muted small" style="margin-top:6px">Paste into Avogadro, Chem3D or another modelling program. Export also saves 3D SDF, MOL2, PDB and XYZ.</div>
         </section>
         <section>
           <h3>Add from text</h3>

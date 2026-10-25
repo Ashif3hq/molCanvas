@@ -31,6 +31,8 @@ jobs:
 
       - run: npm ci
       - run: npm run check:presets
+      - run: npm run check:solubility
+      - run: npm run check:export
 
       - name: Build app and DMG
         uses: tauri-apps/tauri-action@v0

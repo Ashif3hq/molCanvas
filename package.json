@@ -7,6 +7,8 @@
     "build": "tsc -p . && vite build",
     "preview": "vite preview",
     "check:presets": "tsx scripts/check-presets.ts",
+    "check:solubility": "tsx scripts/check-solubility.ts",
+    "check:export": "tsx scripts/check-export.ts",
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "tauri build"

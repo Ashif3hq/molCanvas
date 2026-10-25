@@ -36,7 +36,13 @@ slide deck or lab notebook.
 - **Live properties:** formula, molecular weight, exact mass, elemental analysis, cLogP, TPSA,
   H-bond donors/acceptors, rotatable bonds and stereocentres, for the whole drawing or the
   selection.
-- **Import & export:** SMILES and MOL in and out, PNG (high resolution, white or transparent),
+- **Solubility parameters:** Hansen δD / δP / δH (Hoftyzer–Van Krevelen) and Hildebrand δ
+  (Fedors) by group contribution, for molecules and polymer repeat units, with the groups
+  counted shown and an optional density to use V = M/ρ. Structures outside the group tables
+  are refused rather than guessed.
+- **Molecular modelling:** copy a 3D MOL block (explicit H, MMFF94s+ minimised) to paste into
+  Avogadro, Chem3D and similar programs, or export 3D SDF, MOL2 (SYBYL types), PDB and XYZ.
+- **Import & export:** SMILES and MOL (V2000 and V3000) in and out, PNG (high resolution, white or transparent),
   SVG, and copy-as-image for Word, PowerPoint and Keynote. Name → structure and structure →
   IUPAC name via PubChem (optional, needs internet).
 - **Modern UI:** light and dark mode, trackpad pan and pinch-zoom, unlimited undo, autosave.
@@ -70,6 +76,8 @@ npm run dev          # web version at http://localhost:1420
 npm run app:dev      # desktop app with hot reload
 npm run app:build    # builds MolCanvas.app and a .dmg in src-tauri/target/release/bundle
 npm run check:presets  # validates every preset structure
+npm run check:solubility  # group-contribution sums against hand-worked values
+npm run check:export   # MOL V2000/V3000 round trips and 3D SDF/MOL2/PDB/XYZ output
 ```
 
 ## How it works
@@ -81,6 +89,8 @@ npm run check:presets  # validates every preset structure
 | `src/render.ts` | SVG renderer shared by the canvas, thumbnails and export |
 | `src/editor.ts` | Tools, hit testing, selection, undo/redo, clipboard, pan/zoom |
 | `src/chem.ts` | Chemistry via [OpenChemLib](https://github.com/cheminfo/openchemlib-js): valence, rings, SMILES/MOL, formula, properties |
+| `src/solubility.ts` | Hansen and Hildebrand solubility parameters by group contribution |
+| `src/modeling.ts` | 3D conformers (OpenChemLib + MMFF94s+) and SDF/MOL2/PDB/XYZ writers |
 | `src/presets.ts` | The preset library (SMILES, laid out at runtime) |
 | `src-tauri/` | The [Tauri](https://tauri.app) desktop shell (small native app using the system WebKit) |
 
