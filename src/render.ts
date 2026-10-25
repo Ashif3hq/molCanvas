@@ -171,6 +171,14 @@ function bondSvg(ctx: Ctx, b: Bond): string {
     return out;
   }
 
+  // Double bond of unknown E/Z geometry: drawn as two crossed lines.
+  if (b.stereo === 'wavy') {
+    const g = DOUBLE_GAP / 2;
+    out += line(x1 + px * g, y1 + py * g, x2 - px * g, y2 - py * g, fg);
+    out += line(x1 - px * g, y1 - py * g, x2 + px * g, y2 + py * g, fg);
+    return out;
+  }
+
   // Double bond: decide whether to centre it or offset the second line to one side.
   const side = doubleBondSide(ctx, b, A, B, px, py);
   if (side === 0) {

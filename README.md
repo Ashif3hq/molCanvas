@@ -42,6 +42,11 @@ slide deck or lab notebook.
   are refused rather than guessed.
 - **Molecular modelling:** copy a 3D MOL block (explicit H, MMFF94s+ minimised) to paste into
   Avogadro, Chem3D and similar programs, or export 3D SDF, MOL2 (SYBYL types), PDB and XYZ.
+- **ChemDraw files:** open and save `.cdxml`. Abbreviations such as OMe, Boc or OTBS are expanded,
+  aromatic bonds are kekulised, wedges, polymer (SRU) brackets, reaction arrows, + signs and text
+  come across, and anything MolCanvas cannot represent (curved arrows, shapes, query atoms) is listed
+  in the info bar rather than changed silently. Saved files use ChemDraw's ACS 1996 style and mark
+  reactants and products so ChemDraw treats them as a reaction. Pasting CDXML text works too.
 - **Import & export:** SMILES and MOL (V2000 and V3000) in and out, PNG (high resolution, white or transparent),
   SVG, and copy-as-image for Word, PowerPoint and Keynote. Name → structure and structure →
   IUPAC name via PubChem (optional, needs internet).
@@ -78,6 +83,7 @@ npm run app:build    # builds MolCanvas.app and a .dmg in src-tauri/target/relea
 npm run check:presets  # validates every preset structure
 npm run check:solubility  # group-contribution sums against hand-worked values
 npm run check:export   # MOL V2000/V3000 round trips and 3D SDF/MOL2/PDB/XYZ output
+npm run check:cdxml    # ChemDraw CDXML round trips and a ChemDraw-written test file
 ```
 
 ## How it works
@@ -89,6 +95,7 @@ npm run check:export   # MOL V2000/V3000 round trips and 3D SDF/MOL2/PDB/XYZ out
 | `src/render.ts` | SVG renderer shared by the canvas, thumbnails and export |
 | `src/editor.ts` | Tools, hit testing, selection, undo/redo, clipboard, pan/zoom |
 | `src/chem.ts` | Chemistry via [OpenChemLib](https://github.com/cheminfo/openchemlib-js): valence, rings, SMILES/MOL, formula, properties |
+| `src/cdxml.ts` | ChemDraw CDXML reader and writer |
 | `src/solubility.ts` | Hansen and Hildebrand solubility parameters by group contribution |
 | `src/modeling.ts` | 3D conformers (OpenChemLib + MMFF94s+) and SDF/MOL2/PDB/XYZ writers |
 | `src/presets.ts` | The preset library (SMILES, laid out at runtime) |
@@ -102,7 +109,7 @@ web version is published to the `gh-pages` branch and served by GitHub Pages
 
 - Reaction schemes with atom mapping and reagent placement
 - Copolymers (random/block/alternating notation) and end groups
-- ChemDraw `.cdxml` import/export
+- ChemDraw binary `.cdx` files
 - InChI / InChIKey, NMR shift prediction
 - Signed and notarised macOS releases
 

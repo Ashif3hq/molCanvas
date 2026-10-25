@@ -46,6 +46,7 @@ export function toOCL(doc: Doc): OclBuild {
     let type = b.order === 3 ? Molecule.cBondTypeTriple : b.order === 2 ? Molecule.cBondTypeDouble : Molecule.cBondTypeSingle;
     if (b.order === 1 && b.stereo === 'wedge') type = Molecule.cBondTypeUp;
     if (b.order === 1 && b.stereo === 'hash') type = Molecule.cBondTypeDown;
+    if (b.order === 2 && b.stereo === 'wavy') type = Molecule.cBondTypeCross; // E/Z unknown
     const bi = mol.addBond(ia, ib);
     mol.setBondType(bi, type);
     bondIndex.set(b.id, bi);
@@ -137,9 +138,10 @@ export function fromOCL(mol: Mol): Doc {
   for (let b = 0; b < mol.getAllBonds(); b++) {
     const type = mol.getBondType(b);
     const order = Math.min(3, Math.max(1, mol.getBondOrder(b))) as 1 | 2 | 3;
-    let stereo: 'none' | 'wedge' | 'hash' = 'none';
+    let stereo: 'none' | 'wedge' | 'hash' | 'wavy' = 'none';
     if (type === Molecule.cBondTypeUp) stereo = 'wedge';
     else if (type === Molecule.cBondTypeDown) stereo = 'hash';
+    else if (type === Molecule.cBondTypeCross) stereo = 'wavy';
     doc.bonds.push({ id: doc.nextId++, a: ids[mol.getBondAtom(0, b)], b: ids[mol.getBondAtom(1, b)], order, stereo });
   }
   return doc;

@@ -58,6 +58,7 @@ function mimeFor(ext: string): string {
   switch (ext) {
     case 'png': return 'image/png';
     case 'svg': return 'image/svg+xml';
+    case 'cdxml': return 'chemical/x-cdxml';
     case 'json':
     case 'mcv': return 'application/json';
     default: return 'text/plain';
