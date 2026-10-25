@@ -364,6 +364,8 @@ textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent
 .field input { width: 70px; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-2); padding: 0 6px; outline: none; }
 .field input:focus { border-color: var(--accent); }
 .credit { margin-top: auto; padding-top: 14px; font-size: 11px; color: var(--muted); text-align: center; }
+.credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.credit a:hover { color: var(--accent, #0a84ff); }
 
 /* ---------- popovers ---------- */
 .popover, .menu {
