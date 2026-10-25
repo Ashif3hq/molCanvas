@@ -511,6 +511,13 @@ function updateSolubility(doc: Doc, mass: number | undefined) {
     updateInspector();
   });
 }
+// Collapsed by default so the polymer tools stay in view.
+$('solubility-toggle').addEventListener('click', () => {
+  const btn = $('solubility-toggle');
+  const open = btn.getAttribute('aria-expanded') !== 'true';
+  btn.setAttribute('aria-expanded', String(open));
+  $('solubility').hidden = !open;
+});
 explainOnHover($('solubility'), 'Solubility parameters', 'Estimated from functional-group contributions. Similar δ values (or a small Hansen distance Ra) suggest the solvent dissolves or swells the material.');
 
 let inspectorTimer = 0;
