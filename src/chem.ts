@@ -107,7 +107,7 @@ export function fromSmiles(smiles: string): Doc {
 }
 
 export function fromMolfile(text: string): Doc {
-  const mol = Molecule.fromMolfile(text);
+  const mol = Molecule.fromMolfile(starToOcl(text));
   if (!mol.getAllAtoms()) throw new Error('No atoms found in MOL file');
   let has2D = false;
   for (let i = 0; i < mol.getAllAtoms(); i++) if (mol.getAtomX(i) !== 0 || mol.getAtomY(i) !== 0) has2D = true;
@@ -152,10 +152,21 @@ export function toSmiles(doc: Doc): string {
   return mol.toIsomericSmiles().replace(/\[\?\]/g, '*');
 }
 
-export function toMolfile(doc: Doc): string {
+export function toMolfile(doc: Doc, v3000 = false): string {
   const { mol } = toOCL(doc);
   // OCL's internal y axis points down; molfiles expect y up, which toMolfile handles.
-  return mol.toMolfile();
+  return oclToStar(v3000 ? mol.toMolfileV3() : mol.toMolfile());
+}
+
+// OCL writes atoms with atomic number 0 as '?', which most programs reject; '*' is the usual
+// symbol for a polymer end / attachment point (read by RDKit, Open Babel, ChemDraw).
+const V2000_ATOM = /^(\s*-?\d+\.\d{4}\s+-?\d+\.\d{4}\s+-?\d+\.\d{4}) (\?|\*)( *)(?=\s+-?\d)/gm;
+const V3000_ATOM = /^(M {2}V30 \d+) (\?|\*) /gm;
+function oclToStar(molfile: string): string {
+  return molfile.replace(V2000_ATOM, (_m, xyz, _s, pad) => `${xyz} *${pad}`).replace(V3000_ATOM, '$1 * ');
+}
+function starToOcl(molfile: string): string {
+  return molfile.replace(V2000_ATOM, (_m, xyz, _s, pad) => `${xyz} ?${pad}`).replace(V3000_ATOM, '$1 ? ');
 }
 
 /** Relayout with OCL's 2D coordinate generator, keeping the drawing's centre. */

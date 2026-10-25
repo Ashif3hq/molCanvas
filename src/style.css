@@ -335,6 +335,11 @@ kbd { border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 
 .mini:hover { border-color: var(--accent); }
 .mini.wide { width: 100%; margin-top: 8px; }
 .mini.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-row { display: flex; gap: 6px; }
+.btn-row .mini { flex: 1; }
+.method { margin-top: 6px; font-size: 11.5px; line-height: 1.4; }
+.groups { margin-top: 6px; font-size: 11.5px; color: var(--muted); }
+.groups summary { cursor: pointer; }
 .name-row #name-out { margin-top: 6px; word-break: break-word; }
 textarea {
   width: 100%;

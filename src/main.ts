@@ -7,6 +7,9 @@ import { DARK, LIGHT, standaloneSvg, atomColor } from './render';
 import { Doc, emptyDoc } from './model';
 import { orientPolymer } from './geometry';
 import { isDesktop, isMac, openTextFile, saveFile } from './platform';
+import { solubility, SolubilityResult } from './solubility';
+import { build3D, Model3D, mol2, molfile3D, pdb, sdf3D, xyz } from './modeling';
+import { loadChemResources } from './resources';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const mod = isMac ? '⌘' : 'Ctrl+';
@@ -118,7 +121,7 @@ fileActions.append(
   iconButton('new', `New drawing (${mod}N)`, () => newDrawing()),
   iconButton('open', `Open .mcv, .mol, .sdf or .smi (${mod}O)`, () => openFile()),
   iconButton('save', `Save as .mcv (${mod}S)`, () => saveDrawing()),
-  iconButton('export', 'Export PNG, SVG, MOL or SMILES', (e) => showExportMenu(e.currentTarget as HTMLElement), 'Export'),
+  iconButton('export', 'Export PNG, SVG, MOL, SDF, MOL2, PDB or SMILES', (e) => showExportMenu(e.currentTarget as HTMLElement), 'Export'),
   iconButton('copy', `Copy as image for Word, PowerPoint, Keynote (${mod}⇧C)`, () => copyImage()),
 );
 
@@ -440,6 +443,7 @@ function updateInspector() {
       ${comp ? `<div class="comp">${comp}</div><div class="comp-legend">${legend}</div>` : ''}`;
   }
   updatePolymer(pr?.isPolymer ? pr.mw : null);
+  updateSolubility(doc, pr?.mw);
   let smiles = '';
   try { smiles = doc.atoms.length ? toSmiles(doc) : ''; } catch { smiles = ''; }
   $('smiles').textContent = smiles || '—';
@@ -466,6 +470,48 @@ function updatePolymer(m0: number | null) {
     if (!editor.polymerize()) toast('No non-ring C=C double bond found to polymerise.');
   });
 }
+
+const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+let solDensity = '';
+function updateSolubility(doc: Doc, mass: number | undefined) {
+  const el = $('solubility');
+  if (!doc.atoms.some((a) => a.el !== '*')) {
+    el.innerHTML = '<div class="muted small">Draw a molecule or a polymer repeat unit to estimate its Hansen and Hildebrand solubility parameters.</div>';
+    return;
+  }
+  const density = parseFloat(solDensity);
+  let r: SolubilityResult;
+  try { r = solubility(doc, { density: density > 0 ? density : undefined, mass }); } catch { r = { ok: false, reason: 'This structure could not be analysed.' }; }
+  if (!r.ok) {
+    el.innerHTML = `<div class="muted small">Not available: ${esc(r.reason)}</div>`;
+    return;
+  }
+  const s = r.value;
+  const u = ' MPa<sup>½</sup>';
+  el.innerHTML = `
+    <div class="kv">
+      <span class="k">Hildebrand δ (Fedors)</span><span class="v">${fmt(s.hildebrand, 1)}${u}</span>
+      ${s.hansen ? `
+      <span class="k">Hansen δ<sub>D</sub> dispersion</span><span class="v">${fmt(s.hansen.d, 1)}${u}</span>
+      <span class="k">Hansen δ<sub>P</sub> polar</span><span class="v">${fmt(s.hansen.p, 1)}${u}</span>
+      <span class="k">Hansen δ<sub>H</sub> H-bonding</span><span class="v">${fmt(s.hansen.h, 1)}${u}</span>
+      <span class="k">Hansen δ<sub>t</sub> total</span><span class="v">${fmt(s.hansen.t, 1)}${u}</span>` : `
+      <span class="k">Hansen (HVK)</span><span class="v">–</span>`}
+      <span class="k">Molar volume V${s.isPolymer ? ' (per unit)' : ''}</span><span class="v">${fmt(s.v, 1)} cm³/mol</span>
+    </div>
+    ${s.hvkMissing ? `<div class="muted small method">Hansen values unavailable: ${esc(s.hvkMissing)}.</div>` : ''}
+    <div class="field"><label for="sol-density">Density ρ (optional)</label><input id="sol-density" value="${esc(solDensity)}" placeholder="g/cm³" inputmode="decimal" /></div>
+    <div class="muted method">Group contribution${s.isPolymer ? ' per repeat unit (the two * ends are joined)' : ''}: Hansen by Hoftyzer–Van Krevelen, Hildebrand by Fedors. V = ${s.vSource === 'density' ? 'M/ρ from your density' : `Fedors volume${mass ? '; enter a density to use M/ρ instead' : ''}`}. Estimates, typically within ~10 %; no symmetry correction to δ<sub>P</sub>, and fluorinated or strongly H-bonded structures are less reliable.</div>
+    <details class="groups"><summary>Groups counted</summary>${s.groups.map((g) => `${g.n} × ${esc(g.label)}`).join('<br/>')}</details>`;
+  const inp = el.querySelector<HTMLInputElement>('#sol-density')!;
+  inp.addEventListener('change', () => {
+    const v = inp.value.trim().replace(',', '.');
+    if (v && !(parseFloat(v) > 0)) { toast('Density must be a positive number in g/cm³.'); inp.value = solDensity; return; }
+    solDensity = v;
+    updateInspector();
+  });
+}
+explainOnHover($('solubility'), 'Solubility parameters', 'Estimated from functional-group contributions. Similar δ values (or a small Hansen distance Ra) suggest the solvent dissolves or swells the material.');
 
 let inspectorTimer = 0;
 let saveTimer = 0;
@@ -603,6 +649,47 @@ async function copyImage() {
   }
 }
 
+async function model3D(): Promise<Model3D> {
+  const d = exportDoc();
+  if (!d.atoms.some((a) => a.el !== '*')) throw new Error('nothing to export yet');
+  await loadChemResources();
+  return build3D(d);
+}
+
+function modelNote(m: Model3D): string {
+  const parts = [`${m.mol.getAllAtoms()} atoms with H`, m.minimised ? 'MMFF94s+ minimised' : 'not force-field minimised'];
+  if (m.capped) parts.push(`${m.capped} polymer * end${m.capped > 1 ? 's' : ''} capped with H`);
+  return parts.join(', ');
+}
+
+/** Copy text built asynchronously; ClipboardItem with a promise keeps the user gesture alive in WebKit. */
+async function copyText(make: () => Promise<string>): Promise<void> {
+  const text = make();
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'text/plain': text.then((t) => new Blob([t], { type: 'text/plain' })) })]);
+  } catch {
+    await navigator.clipboard.writeText(await text); // rethrows a build error; older WebKit lacks promise ClipboardItems
+  }
+}
+
+$('copy-3d').addEventListener('click', () => {
+  let note = '';
+  copyText(async () => { const m = await model3D(); note = modelNote(m); return molfile3D(m); })
+    .then(() => toast(`3D MOL copied (${note}). Paste it into your modelling program.`))
+    .catch((e: Error) => toast(`3D copy failed: ${e.message}`));
+});
+$('copy-2d').addEventListener('click', () => {
+  if (!exportDoc().atoms.length) { toast('Nothing to copy yet.'); return; }
+  copyText(async () => toMolfile(exportDoc()))
+    .then(() => toast('2D MOL (V2000) copied.'))
+    .catch(() => toast('Copy failed: use Export → MOL file instead.'));
+});
+
+async function save3D(ext: string, name: string, make: (m: Model3D) => string) {
+  const m = await model3D();
+  if (await saveFile(`structure.${ext}`, make(m), { name, extensions: [ext] })) toast(`${ext.toUpperCase()} exported (${modelNote(m)}).`);
+}
+
 function showExportMenu(anchor: HTMLElement) {
   const menu = $('export-menu');
   if (!menu.hidden) { menu.hidden = true; return; }
@@ -618,9 +705,16 @@ function showExportMenu(anchor: HTMLElement) {
     ['SVG vector', 'for papers & Illustrator', async () => {
       if (await saveFile('structure.svg', exportSvg(null), { name: 'SVG image', extensions: ['svg'] })) toast('SVG exported.');
     }],
-    ['MOL file', 'V2000, for other software', async () => {
+    ['MOL file', '2D, V2000, for other software', async () => {
       if (await saveFile('structure.mol', toMolfile(exportDoc()), { name: 'MDL Molfile', extensions: ['mol'] })) toast('MOL exported.');
     }],
+    ['MOL file (V3000)', '2D, for large structures', async () => {
+      if (await saveFile('structure.mol', toMolfile(exportDoc(), true), { name: 'MDL Molfile V3000', extensions: ['mol'] })) toast('MOL V3000 exported.');
+    }],
+    ['3D SDF', 'with H, MMFF94s+ minimised', () => save3D('sdf', 'Structure-data file', sdf3D)],
+    ['3D MOL2', 'Tripos, SYBYL atom types', () => save3D('mol2', 'Tripos MOL2', mol2)],
+    ['3D PDB', 'HETATM + CONECT', () => save3D('pdb', 'Protein Data Bank file', pdb)],
+    ['3D XYZ', 'coordinates only', () => save3D('xyz', 'XYZ coordinates', xyz)],
     ['SMILES', '.smi text file', async () => {
       if (await saveFile('structure.smi', `${toSmiles(exportDoc())}\n`, { name: 'SMILES', extensions: ['smi'] })) toast('SMILES exported.');
     }],
