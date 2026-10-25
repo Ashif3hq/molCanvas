@@ -6,7 +6,7 @@ import { CATEGORIES, Preset, PRESETS } from './presets';
 import { DARK, LIGHT, standaloneSvg, atomColor } from './render';
 import { Doc, emptyDoc } from './model';
 import { orientPolymer } from './geometry';
-import { isDesktop, isMac, openTextFile, saveFile } from './platform';
+import { isDesktop, isMac, openExternal, openTextFile, saveFile } from './platform';
 import { solubility, SolubilityResult } from './solubility';
 import { build3D, Model3D, mol2, molfile3D, pdb, sdf3D, xyz } from './modeling';
 import { loadChemResources } from './resources';
@@ -31,6 +31,12 @@ function applyTheme() {
 prefersDark.addEventListener('change', applyTheme);
 
 if (isDesktop() && isMac) document.documentElement.classList.add('desktop-mac');
+
+// The author credit links to Ashif's LinkedIn; in the Mac app it opens in the default browser.
+$('author-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  openExternal((e.currentTarget as HTMLAnchorElement).href);
+});
 
 // ---------- editor ----------
 

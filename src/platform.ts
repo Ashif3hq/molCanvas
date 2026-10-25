@@ -39,6 +39,13 @@ export async function saveFile(defaultName: string, data: string | Uint8Array, f
   return true;
 }
 
+/** Open a web link in the default browser (the desktop app's window never navigates away). */
+export function openExternal(url: string) {
+  const t = tauri();
+  if (t) t.invoke('open_url', { url }).catch(() => {});
+  else window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 /** Ask the user for a text file. Works with the standard file input in browsers and in the macOS webview. */
 export function openTextFile(accept: string): Promise<{ name: string; text: string } | null> {
   return new Promise((resolve) => {
