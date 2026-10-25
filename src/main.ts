@@ -10,6 +10,7 @@ import { isDesktop, isMac, openTextFile, saveFile } from './platform';
 import { solubility, SolubilityResult } from './solubility';
 import { build3D, Model3D, mol2, molfile3D, pdb, sdf3D, xyz } from './modeling';
 import { loadChemResources } from './resources';
+import { fromCdxml, toCdxml } from './cdxml';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const mod = isMac ? '⌘' : 'Ctrl+';
@@ -119,7 +120,7 @@ const fileActions = $('file-actions');
 fileActions.append(
   iconButton('library', 'Show / hide library', () => $('app').classList.toggle('lib-hidden')),
   iconButton('new', `New drawing (${mod}N)`, () => newDrawing()),
-  iconButton('open', `Open .mcv, .mol, .sdf or .smi (${mod}O)`, () => openFile()),
+  iconButton('open', `Open .mcv, ChemDraw .cdxml, .mol, .sdf or .smi (${mod}O)`, () => openFile()),
   iconButton('save', `Save as .mcv (${mod}S)`, () => saveDrawing()),
   iconButton('export', 'Export PNG, SVG, MOL, SDF, MOL2, PDB or SMILES', (e) => showExportMenu(e.currentTarget as HTMLElement), 'Export'),
   iconButton('copy', `Copy as image for Word, PowerPoint, Keynote (${mod}⇧C)`, () => copyImage()),
@@ -599,9 +600,18 @@ function newDrawing() {
 }
 
 async function openFile() {
-  const f = await openTextFile('.mcv,.json,.mol,.sdf,.smi,.smiles,.txt');
+  const f = await openTextFile('.mcv,.json,.cdxml,.mol,.sdf,.smi,.smiles,.txt');
   if (!f) return;
   try {
+    if (/\.cdxml$/i.test(f.name) || /<CDXML[\s>]/.test(f.text.slice(0, 2000))) {
+      const { doc, notes } = fromCdxml(f.text);
+      if (!editor.load(doc)) return; // refused: the info bar says which atom breaks a valence rule
+      // anything that could not be carried over stays explained in the info bar
+      toolHint = { title: `Opened ${f.name}`, detail: notes.length ? notes.join(' ') : 'Everything in this ChemDraw file was imported.' };
+      showInfo(toolHint.title, toolHint.detail, notes.length > 0);
+      toast(`Opened ${f.name}${notes.length ? ' (the info bar lists what changed)' : ''}`);
+      return;
+    }
     if (/\.(mcv|json)$/i.test(f.name)) {
       const d = JSON.parse(f.text) as Doc;
       if (!Array.isArray(d.atoms)) throw new Error('not a MolCanvas file');
@@ -717,6 +727,9 @@ function showExportMenu(anchor: HTMLElement) {
     }],
     ['MOL file (V3000)', '2D, for large structures', async () => {
       if (await saveFile('structure.mol', toMolfile(exportDoc(), true), { name: 'MDL Molfile V3000', extensions: ['mol'] })) toast('MOL V3000 exported.');
+    }],
+    ['ChemDraw (CDXML)', 'ACS 1996 style, opens in ChemDraw', async () => {
+      if (await saveFile('structure.cdxml', toCdxml(exportDoc()), { name: 'ChemDraw CDXML', extensions: ['cdxml'] })) toast('CDXML exported.');
     }],
     ['3D SDF', 'with H, MMFF94s+ minimised', () => save3D('sdf', 'Structure-data file', sdf3D)],
     ['3D MOL2', 'Tripos, SYBYL atom types', () => save3D('mol2', 'Tripos MOL2', mol2)],

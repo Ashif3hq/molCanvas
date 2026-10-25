@@ -1,5 +1,6 @@
 // Interactive editor: tools, hit testing, selection, undo/redo, pan/zoom.
 import { analyze, Analysis, cleanCoordinates, fromMolfile, fromSmiles, toSmiles } from './chem';
+import { fromCdxml } from './cdxml';
 import {
   addAtom, addBond, Arrow, ArrowKind, atomById, BOND, BondStereo, bondsOf, cloneDoc, Doc, emptyDoc, fragments,
   mergeInto, neighbors, Point, bounds, pruneLoneCarbons, removeObjects, segDist, subDoc, dist, centroid, TextItem,
@@ -191,11 +192,14 @@ export class Editor {
   canUndo() { return this.undoStack.length > 0; }
   canRedo() { return this.redoStack.length > 0; }
 
-  load(doc: Doc, keepHistory = true) {
-    if (keepHistory) this.commit((d) => Object.assign(d, cloneDoc(doc)));
+  /** Replace the drawing. False if it was refused because it breaks a valence rule. */
+  load(doc: Doc, keepHistory = true): boolean {
+    let ok = true;
+    if (keepHistory) ok = this.commit((d) => Object.assign(d, cloneDoc(doc)));
     else { this.doc = cloneDoc(doc); this.undoStack = []; this.redoStack = []; this.changed(); }
     this.sel.clear();
     this.fitView();
+    return ok;
   }
 
   clear() {
@@ -1014,8 +1018,14 @@ export class Editor {
     }
   }
 
-  /** Insert SMILES or MOL text at the view centre. Throws if it cannot be parsed. */
+  /** Insert SMILES, MOL or ChemDraw CDXML text at the view centre. Throws if it cannot be parsed. */
   insertText(text: string) {
+    if (/<CDXML[\s>]/.test(text)) {
+      const { doc, notes } = fromCdxml(text);
+      this.insertFragment(doc, false);
+      if (notes.length) this.onStatus(`ChemDraw import: ${notes.join(' ')}`);
+      return;
+    }
     const frag = /V2000|V3000|M {2}END/.test(text) ? fromMolfile(text) : fromSmiles(text.trim().split(/\s+/)[0]);
     orientPolymer(frag);
     this.insertFragment(frag, false);

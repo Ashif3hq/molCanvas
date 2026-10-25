@@ -165,6 +165,7 @@ export function explainBond(doc: Doc, b: Bond, inRing: boolean): Explanation {
   const A = atomById(doc, b.a)!, B = atomById(doc, b.b)!;
   const kind = b.stereo === 'wedge' ? 'Wedge bond (towards you)'
     : b.stereo === 'hash' ? 'Hashed bond (away from you)'
+    : b.stereo === 'wavy' && b.order === 2 ? 'Crossed double bond (E/Z unknown)'
     : b.stereo === 'wavy' ? 'Wavy bond (unknown stereochemistry)'
     : b.order === 3 ? 'Triple bond' : b.order === 2 ? 'Double bond' : 'Single bond';
   const sym = b.order === 3 ? '≡' : b.order === 2 ? '=' : '–';

@@ -9,6 +9,7 @@
     "check:presets": "tsx scripts/check-presets.ts",
     "check:solubility": "tsx scripts/check-solubility.ts",
     "check:export": "tsx scripts/check-export.ts",
+    "check:cdxml": "tsx scripts/check-cdxml.ts",
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "tauri build"
