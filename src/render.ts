@@ -2,6 +2,7 @@
 // drives the live canvas, library thumbnails and SVG/PNG export.
 import { Analysis, analyze } from './chem';
 import { Atom, Bond, BOND, Doc, Point, Arrow, TextItem, fragments, repeatUnitEnds } from './model';
+import { lonePairs } from './valence';
 
 export interface Theme {
   fg: string;
@@ -21,6 +22,7 @@ export interface RenderOpts {
   hover?: number | null;
   analysis?: Analysis;
   showErrors?: boolean;
+  showLonePairs?: boolean;
 }
 
 export const FONT = 16;
@@ -98,6 +100,7 @@ interface Ctx {
   byId: Map<number, Atom>;
   nbrs: Map<number, Atom[]>;
   labels: Map<number, LabelInfo>;
+  used: Map<number, number>; // atom id -> sum of bond orders
 }
 
 function buildCtx(doc: Doc, opts: RenderOpts): Ctx {
@@ -111,10 +114,15 @@ function buildCtx(doc: Doc, opts: RenderOpts): Ctx {
     nbrs.get(A.id)!.push(B);
     nbrs.get(B.id)!.push(A);
   }
+  const used = new Map<number, number>();
+  for (const b of doc.bonds) {
+    used.set(b.a, (used.get(b.a) ?? 0) + b.order);
+    used.set(b.b, (used.get(b.b) ?? 0) + b.order);
+  }
   const labels = new Map<number, LabelInfo>();
   const ends = repeatUnitEnds(doc);
   for (const a of doc.atoms) labels.set(a.id, labelInfo(doc, a, nbrs.get(a.id)!, an, ends.has(a.id)));
-  return { doc, opts, an, byId, nbrs, labels };
+  return { doc, opts, an, byId, nbrs, labels, used };
 }
 
 function line(x1: number, y1: number, x2: number, y2: number, color: string, w = LINE, extra = ''): string {
@@ -240,8 +248,58 @@ function atomSvg(ctx: Ctx, a: Atom): string {
     const cy = a.y - (li.shown ? FONT * 0.38 : 7);
     out += `<text x="${f(cx)}" y="${f(cy)}" font-size="${FONT * 0.75}" text-anchor="start" fill="${color}">${chargeText(a.charge)}</text>`;
   }
+  out += electronDots(ctx, a, li, color);
   if (ctx.opts.showErrors && ctx.an.badValence.has(a.id)) {
     out += `<circle cx="${f(a.x)}" cy="${f(a.y)}" r="11" fill="none" stroke="${ctx.opts.theme.error}" stroke-width="1.4" stroke-dasharray="3 2"/>`;
+  }
+  return out;
+}
+
+/**
+ * Radical electrons (always) and lone pairs (when enabled) as dots, placed one group at a time in the
+ * widest free direction around the atom, away from bonds, the H label, the charge and the isotope.
+ */
+function electronDots(ctx: Ctx, a: Atom, li: LabelInfo, color: string): string {
+  if (a.el === '*' || a.el === 'R') return '';
+  const groups: number[] = []; // gap between the two dots of a group; 0 for a single dot
+  if (a.radical === 'doublet') groups.push(0);
+  else if (a.radical === 'triplet') groups.push(7);
+  else if (a.radical === 'singlet') groups.push(4.6);
+  if (ctx.opts.showLonePairs) {
+    const lp = lonePairs(a, ctx.used.get(a.id) ?? 0, ctx.an.hCount.get(a.id) ?? 0);
+    for (let i = 0; i < lp; i++) groups.push(4.6);
+  }
+  if (!groups.length) return '';
+  const taken = ctx.nbrs.get(a.id)!.map((n) => Math.atan2(n.y - a.y, n.x - a.x));
+  if (li.hCount) taken.push(li.hSide === 'right' ? 0 : Math.PI);
+  if (a.charge) taken.push(-Math.PI / 4);
+  if (a.iso) taken.push((-3 * Math.PI) / 4);
+  const gapTo = (t: number) => taken.reduce((m, u) => Math.min(m, Math.abs(Math.atan2(Math.sin(t - u), Math.cos(t - u)))), Math.PI);
+  let out = '';
+  const r = 1.6;
+  for (const gap of groups) {
+    // on a labelled atom, dots go on the four sides of the symbol as in textbooks while a side is free
+    let best = -Math.PI / 2, score = -1;
+    if (li.shown) {
+      for (let k = 0; k < 4; k++) {
+        const t = -Math.PI / 2 + (k * Math.PI) / 2;
+        if (gapTo(t) > score + 1e-6) { score = gapTo(t); best = t; }
+      }
+    }
+    if (score < 0.6) {
+      score = -1;
+      for (let k = 0; k < 48; k++) {
+        const t = -Math.PI / 2 + (k * Math.PI) / 24;
+        if (gapTo(t) > score + 1e-6) { score = gapTo(t); best = t; }
+      }
+    }
+    taken.push(best);
+    const ux = Math.cos(best), uy = Math.sin(best);
+    const rx = li.shown ? li.halfW + 4.5 : 6.5, ry = li.shown ? FONT * 0.62 : 6.5;
+    const cx = a.x + ux * rx, cy = a.y + uy * ry;
+    if (!gap) { out += `<circle cx="${f(cx)}" cy="${f(cy)}" r="${r}" fill="${color}"/>`; continue; }
+    const px = -uy * gap / 2, py = ux * gap / 2;
+    out += `<circle cx="${f(cx + px)}" cy="${f(cy + py)}" r="${r}" fill="${color}"/><circle cx="${f(cx - px)}" cy="${f(cy - py)}" r="${r}" fill="${color}"/>`;
   }
   return out;
 }

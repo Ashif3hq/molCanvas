@@ -5,6 +5,8 @@ export const BOND = 40;
 
 export type BondStereo = 'none' | 'wedge' | 'hash' | 'wavy';
 export type ArrowKind = 'forward' | 'equilibrium' | 'retro' | 'resonance';
+/** Non-bonding electrons drawn as dots: one unpaired (•), two unpaired (triplet ••) or two paired (singlet ••). */
+export type Radical = 'doublet' | 'triplet' | 'singlet';
 
 export interface Atom {
   id: number;
@@ -13,6 +15,7 @@ export interface Atom {
   y: number;
   charge: number;
   iso?: number;
+  radical?: Radical;
   sub?: string; // subscript shown next to a polymer bracket (default "n")
 }
 
@@ -122,7 +125,7 @@ export function pruneLoneCarbons(d: Doc, candidates: Iterable<number>) {
   const lone = new Set<number>();
   for (const id of candidates) {
     const a = atomById(d, id);
-    if (a && (a.el === 'C' || a.el === '*') && a.charge === 0 && bondsOf(d, id).length === 0) lone.add(id);
+    if (a && (a.el === 'C' || a.el === '*') && a.charge === 0 && !a.radical && bondsOf(d, id).length === 0) lone.add(id);
   }
   if (lone.size) removeAtoms(d, lone);
 }
@@ -180,6 +183,7 @@ export function mergeInto(d: Doc, frag: Doc, dx = 0, dy = 0, atomMap = new Map<n
     if (map.has(a.id)) continue;
     const na = addAtom(d, a.el, a.x + dx, a.y + dy, a.charge);
     if (a.iso) na.iso = a.iso;
+    if (a.radical) na.radical = a.radical;
     if (a.sub) na.sub = a.sub;
     map.set(a.id, na.id);
   }
@@ -249,4 +253,14 @@ export function repeatUnitEnds(d: Doc): Set<number> {
     if (ends.length === 2) ends.forEach((id) => out.add(id));
   }
   return out;
+}
+
+/** Electrons a radical takes out of bonding: 1 for a doublet, 2 for a carbene/nitrene (singlet or triplet). */
+export function radicalElectrons(r?: Radical): number {
+  return r === 'doublet' ? 1 : r ? 2 : 0;
+}
+
+/** Unpaired electrons: 1 for a doublet, 2 for a triplet, 0 for a singlet (its two electrons are paired). */
+export function unpairedElectrons(r?: Radical): number {
+  return r === 'doublet' ? 1 : r === 'triplet' ? 2 : 0;
 }

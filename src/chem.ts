@@ -1,10 +1,21 @@
 // Chemistry layer: converts between the MolCanvas document and OpenChemLib molecules
 // for valence, rings, formulas, properties, SMILES and MOL files.
 import { Molecule, MoleculeProperties } from 'openchemlib';
-import { BOND, Doc, emptyDoc, fragments, Point, repeatUnitEnds } from './model';
+import { BOND, Doc, emptyDoc, fragments, Point, Radical, repeatUnitEnds } from './model';
 import { valenceProblems } from './valence';
 
 type Mol = InstanceType<typeof Molecule>;
+
+const OCL_RADICAL: Record<Radical, number> = {
+  doublet: Molecule.cAtomRadicalStateD, triplet: Molecule.cAtomRadicalStateT, singlet: Molecule.cAtomRadicalStateS,
+};
+
+function radicalFromOCL(state: number): Radical | undefined {
+  if (state === Molecule.cAtomRadicalStateD) return 'doublet';
+  if (state === Molecule.cAtomRadicalStateT) return 'triplet';
+  if (state === Molecule.cAtomRadicalStateS) return 'singlet';
+  return undefined;
+}
 
 const STAR_PLACEHOLDER = 117; // Ts: never occurs in real structures, used to carry '*' through the SMILES parser
 
@@ -37,6 +48,7 @@ export function toOCL(doc: Doc): OclBuild {
     mol.setAtomY(i, a.y / BOND);
     if (a.charge) mol.setAtomCharge(i, a.charge);
     if (a.iso) mol.setAtomMass(i, a.iso);
+    if (a.radical && z > 0) mol.setAtomRadical(i, OCL_RADICAL[a.radical]);
     index.set(a.id, i);
     ids.push(a.id);
   }
@@ -132,6 +144,8 @@ export function fromOCL(mol: Mol): Doc {
     const atom = { id, el, x: (mol.getAtomX(i) - cx) * scale, y: (mol.getAtomY(i) - cy) * scale, charge: mol.getAtomCharge(i) } as Doc['atoms'][number];
     const mass = mol.getAtomMass(i);
     if (mass) atom.iso = mass;
+    const radical = el === '*' ? undefined : radicalFromOCL(mol.getAtomRadical(i));
+    if (radical) atom.radical = radical;
     doc.atoms.push(atom);
     ids.push(id);
   }

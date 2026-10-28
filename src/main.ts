@@ -150,6 +150,12 @@ const colorBtn = iconButton('palette', 'Colour heteroatoms', () => {
   renderLibrary();
 });
 colorBtn.classList.add('active');
+const lonePairBtn = iconButton('lonepairs', 'Show lone pairs', () => {
+  editor.showLonePairs = !editor.showLonePairs;
+  lonePairBtn.classList.toggle('active', editor.showLonePairs);
+  editor.render();
+});
+explainOnHover(lonePairBtn, 'Show lone pairs', 'Draws non-bonding electron pairs as dots on N, O, S, halogens and anions (e.g. the three lone pairs of an alkoxide O⁻). Also used for image export.');
 const themeBtn = iconButton('moon', 'Toggle dark mode', () => {
   themeChoice = isDark() ? 'light' : 'dark';
   try { localStorage.setItem('molcanvas.theme', themeChoice); } catch { /* ignore */ }
@@ -162,6 +168,7 @@ $('view-actions').append(
   iconButton('fit', `Fit to window (${mod}0)`, () => editor.fitView()),
   iconButton('zoomIn', `Zoom in (${mod}+)`, () => editor.zoomBy(1.25)),
   colorBtn,
+  lonePairBtn,
   themeBtn,
 );
 applyTheme();
@@ -195,6 +202,7 @@ const TOOL_DEFS: (ToolDef | 'sep')[] = [
   'sep',
   { key: 'plus', icon: 'plus', title: 'Positive charge (hover + "+")', tool: { kind: 'charge', delta: 1 } },
   { key: 'minus', icon: 'minus', title: 'Negative charge (hover + "−")', tool: { kind: 'charge', delta: -1 } },
+  { key: 'radical', icon: 'radical', title: 'Radical electrons (hover + "."). Click again to cycle', tool: { kind: 'radical' } },
   'sep',
   { key: 'arrow', icon: 'arrow', title: 'Reaction arrow (A)', tool: { kind: 'arrow', arrow: 'forward' } },
   { key: 'equilibrium', icon: 'equilibrium', title: 'Equilibrium arrow', tool: { kind: 'arrow', arrow: 'equilibrium' } },
@@ -220,7 +228,8 @@ const TOOL_EXPLAIN: Record<string, string> = {
   'el-*': 'Polymer end (*): marks where a repeat unit continues. Each * has exactly one bond and MolCanvas draws a bracket with n across it.',
   ptable: 'Pick any element from the periodic table.',
   plus: 'Add a positive formal charge (e.g. ammonium N⁺, carbocation C⁺). The allowed number of bonds changes with charge.',
-  minus: 'Add a negative formal charge (e.g. alkoxide O⁻, carbanion C⁻).',
+  minus: 'Add a negative formal charge (e.g. alkoxide O⁻, carbanion C⁻). Click a + atom to cancel its charge.',
+  radical: 'Unpaired electrons: • radical (methyl CH3•, TEMPO N–O•), then •• triplet and •• singlet carbene or nitrene. Each radical electron replaces one bond, so CH4 becomes CH3•. Combine with + or − for radical cations and anions (M•+ in mass spectrometry).',
   arrow: 'Reaction arrow: reactants → products. Drag to draw; it snaps to 15°. Shortcut A.',
   equilibrium: 'Equilibrium arrows for reversible reactions.', retro: 'Retrosynthesis arrow: target ⇒ precursors.',
   resonance: 'Double-headed arrow between resonance structures.',
@@ -643,7 +652,7 @@ function exportDoc(): Doc {
 }
 
 function exportSvg(background: string | null): string {
-  return standaloneSvg(exportDoc(), { theme: LIGHT, colorAtoms: editor.colorAtoms, background, pad: 14 });
+  return standaloneSvg(exportDoc(), { theme: LIGHT, colorAtoms: editor.colorAtoms, showLonePairs: editor.showLonePairs, background, pad: 14 });
 }
 
 async function svgToPng(svgText: string, scale = 4): Promise<Blob> {

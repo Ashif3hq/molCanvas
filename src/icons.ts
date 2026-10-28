@@ -34,6 +34,8 @@ export const ICONS: Record<string, string> = {
   benzene: ring(6, true),
   plus: svg('<circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/>'),
   minus: svg('<circle cx="12" cy="12" r="8"/><path d="M8 12h8"/>'),
+  radical: svg('<line x1="4.5" y1="19.5" x2="13" y2="11"/><circle cx="17.5" cy="6.5" r="2.4" fill="currentColor" stroke="none"/>'),
+  lonepairs: svg('<circle cx="12" cy="13.5" r="4.2"/><g fill="currentColor" stroke="none"><circle cx="10" cy="5.6" r="1.3"/><circle cx="14" cy="5.6" r="1.3"/><circle cx="4.4" cy="11.5" r="1.3"/><circle cx="4.4" cy="15.5" r="1.3"/><circle cx="19.6" cy="11.5" r="1.3"/><circle cx="19.6" cy="15.5" r="1.3"/></g>'),
   arrow: svg('<line x1="3" y1="12" x2="19" y2="12"/><polygon points="21,12 16,9 16,15" fill="currentColor"/>'),
   equilibrium: svg('<line x1="3" y1="9.5" x2="20" y2="9.5"/><path d="M20 9.5l-4-3"/><line x1="4" y1="14.5" x2="21" y2="14.5"/><path d="M4 14.5l4 3"/>'),
   retro: svg('<line x1="3" y1="9.5" x2="17" y2="9.5"/><line x1="3" y1="14.5" x2="17" y2="14.5"/><path d="M14 5l7 7-7 7"/>'),

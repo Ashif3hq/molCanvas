@@ -18,9 +18,14 @@ slide deck or lab notebook.
 
 - **Fast drawing:** single, double, triple, wedge, hash and wavy bonds; zig-zag chains; 3–8
   membered rings and benzene with automatic ring fusion; any element from the periodic table;
-  charges; reaction, equilibrium, retrosynthesis and resonance arrows; text with automatic
+  charges; radicals; reaction, equilibrium, retrosynthesis and resonance arrows; text with automatic
   subscripts (`CH2Cl2` → CH₂Cl₂).
-- **ChemDraw-style hotkeys:** hover an atom and press `N`, `O`, `S`, `F`, `L` (Cl), `B` (Br)…
+- **Ions and radicals:** cations and anions with formal charges, radicals (•), triplet and
+  singlet carbenes/nitrenes, radical cations and anions. Each radical electron takes the place of
+  a bond (CH₄ → CH₃•), the info bar names the species (tertiary carbocation, oxyl radical,
+  triplet carbene…), and an optional lone-pair view draws non-bonding pairs. Radicals are kept in
+  SMILES, MOL, CDXML and the 3D formats.
+- **ChemDraw-style hotkeys:** hover an atom and press `N`, `O`, `S`, `F`, `L` (Cl), `B` (Br)… (`+`, `-` for charge, `.` for a radical)
   to change it; hover a bond and press `1`, `2`, `3` to set its order. Type a group such as
   `OMe`, `CO2H`, `Boc`, `Ph` or `TBS` with the text tool to expand it.
 - **350+ presets**, all validated in CI:
@@ -84,6 +89,7 @@ npm run check:presets  # validates every preset structure
 npm run check:solubility  # group-contribution sums against hand-worked values
 npm run check:export   # MOL V2000/V3000 round trips and 3D SDF/MOL2/PDB/XYZ output
 npm run check:cdxml    # ChemDraw CDXML round trips and a ChemDraw-written test file
+npm run check:radicals # radicals, carbenes and ions: valence, info bar, every export format
 ```
 
 ## How it works
