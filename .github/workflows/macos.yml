@@ -34,6 +34,7 @@ jobs:
       - run: npm run check:solubility
       - run: npm run check:export
       - run: npm run check:cdxml
+      - run: npm run check:radicals
 
       - name: Build app and DMG
         uses: tauri-apps/tauri-action@v0

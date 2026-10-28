@@ -1,6 +1,6 @@
 {
   "name": "molcanvas",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MolCanvas: a free, modern chemical structure editor for organic and polymer chemists",
   "scripts": {
     "dev": "vite",
