@@ -3,7 +3,7 @@ import { analyze, Analysis, cleanCoordinates, fromMolfile, fromSmiles, toSmiles 
 import { fromCdxml } from './cdxml';
 import {
   addAtom, addBond, Arrow, ArrowKind, atomById, BOND, BondStereo, bondsOf, cloneDoc, Doc, emptyDoc, fragments,
-  mergeInto, neighbors, Point, bounds, pruneLoneCarbons, removeObjects, segDist, subDoc, dist, centroid, TextItem,
+  mergeInto, neighbors, Point, Radical, bounds, pruneLoneCarbons, removeObjects, segDist, subDoc, dist, centroid, TextItem,
 } from './model';
 import {
   chain, dirVec, findAtomNear, freeDirection, Placement, placeTemplate, ringAtPoint, ringOnAtom, ringOnBond,
@@ -21,6 +21,7 @@ export type Tool =
   | { kind: 'ring'; size: number; aromatic: boolean }
   | { kind: 'atom'; el: string }
   | { kind: 'charge'; delta: 1 | -1 }
+  | { kind: 'radical' }
   | { kind: 'arrow'; arrow: ArrowKind }
   | { kind: 'text' }
   | { kind: 'template'; preset: Preset; frag: Doc };
@@ -58,6 +59,7 @@ export class Editor {
   ty = 0;
   theme!: Theme;
   colorAtoms = true;
+  showLonePairs = false;
   showErrors = true;
 
   onChange: () => void = () => {};
@@ -122,6 +124,28 @@ export class Editor {
     this.redoStack = [];
     this.changed();
     return true;
+  }
+
+  /**
+   * Radical tool: none → • (doublet) → •• (triplet) → •• (singlet) → none. States the atom has no
+   * electrons left for are skipped (CH3• can become :CH2 only if it loses an H, so it goes back to none).
+   */
+  cycleRadical(id: number) {
+    const a = atomById(this.doc, id);
+    if (!a) return;
+    if (a.el === '*') { this.onWarn('A polymer end (*) marks a bond position, not an atom, so it cannot carry a radical.'); return; }
+    const order: (Radical | undefined)[] = [undefined, 'doublet', 'triplet', 'singlet'];
+    const set = (r: Radical | undefined) => (d: Doc) => { const x = atomById(d, id)!; if (r) x.radical = r; else delete x.radical; };
+    const start = order.indexOf(a.radical);
+    // from no radical, try the doublet directly so a refusal is explained in the info bar
+    if (start === 0) { this.commit(set('doublet')); return; }
+    const prior = new Map(valenceProblems(this.doc).map((p) => [p.atom.id, p.used]));
+    for (let k = start + 1; k < order.length; k++) {
+      const trial = cloneDoc(this.doc);
+      set(order[k])(trial);
+      if (!valenceProblems(trial).some((p) => p.used > (prior.get(p.atom.id) ?? -1))) { this.commit(set(order[k])); return; }
+    }
+    this.commit(set(undefined));
   }
 
   /** Why a placement would be refused, or null if it is chemically fine. */
@@ -226,7 +250,8 @@ export class Editor {
       case 'chain': return 'Chain: drag from an atom or empty space to draw a zig-zag carbon chain.';
       case 'ring': return 'Ring: click empty space to place, click a bond to fuse, click an atom for a spiro/substituent ring.';
       case 'atom': return `Atom ${t.el}: click an atom to change it, click empty space to add one, drag from an atom to add a bonded ${t.el}.`;
-      case 'charge': return `Charge: click an atom to ${t.delta > 0 ? 'add' : 'remove'} a positive charge.`;
+      case 'charge': return `Charge: click an atom to ${t.delta > 0 ? 'add a positive' : 'add a negative'} charge (or cancel the opposite one).`;
+      case 'radical': return 'Radical: click an atom to cycle • (radical) → •• triplet → •• singlet → none. Hover an atom and press . for the same.';
       case 'arrow': return 'Arrow: drag to draw a reaction arrow (snaps to 15°), click to drop a standard arrow.';
       case 'text': return 'Text: click to add a label (digits after letters become subscripts, e.g. CH2Cl2). Click a polymer end to edit n.';
       case 'template': return `${t.preset.name}: click to place${t.preset.kind === 'group' ? ', or click an atom to attach' : ''}. Esc to stop.`;
@@ -289,6 +314,7 @@ export class Editor {
       hover: this.hover ? this.hover.id : null,
       analysis: this.analysis(),
       showErrors: this.showErrors,
+      showLonePairs: this.showLonePairs,
     };
     let html = renderDoc(this.doc, opts);
     if (this.ghost) {
@@ -564,7 +590,7 @@ export class Editor {
       case 'atom': {
         if (hit?.type === 'atom') {
           const id = hit.id;
-          this.commit((d) => { const a = atomById(d, id)!; a.el = t.el; delete a.sub; });
+          this.commit((d) => { const a = atomById(d, id)!; a.el = t.el; delete a.sub; if (t.el === '*') delete a.radical; });
         } else if (!hit) {
           this.commit((d) => addAtom(d, t.el, p.x, p.y));
         }
@@ -575,6 +601,10 @@ export class Editor {
           const id = hit.id;
           this.commit((d) => { const a = atomById(d, id)!; a.charge = Math.max(-4, Math.min(4, a.charge + t.delta)); });
         }
+        return;
+      }
+      case 'radical': {
+        if (hit?.type === 'atom') this.cycleRadical(hit.id);
         return;
       }
       case 'text': {
@@ -893,7 +923,7 @@ export class Editor {
     if (!label) return;
     const el = label.length <= 2 ? label[0].toUpperCase() + label.slice(1).toLowerCase() : label;
     if (this.isElement(el) || el === '*') {
-      this.commit((d) => { atomById(d, id)!.el = el; });
+      this.commit((d) => { const a = atomById(d, id)!; a.el = el; if (el === '*') delete a.radical; });
       return;
     }
     if (!this.expandAbbreviation(id, label)) this.onStatus(`Unknown element or group “${label}”.`);
@@ -962,7 +992,8 @@ export class Editor {
     const h = this.hover;
     if (h?.type === 'atom') {
       const el = HOTKEY_ELEMENTS[e.key];
-      if (el) { e.preventDefault(); this.commit((d) => { atomById(d, h.id)!.el = el; }); return; }
+      if (el) { e.preventDefault(); this.commit((d) => { const a = atomById(d, h.id)!; a.el = el; if (el === '*') delete a.radical; }); return; }
+      if (e.key === '.') { e.preventDefault(); this.cycleRadical(h.id); return; }
       if (e.key === '+' || e.key === '=') { this.commit((d) => { atomById(d, h.id)!.charge += 1; }); return; }
       if (e.key === '-') { this.commit((d) => { atomById(d, h.id)!.charge -= 1; }); return; }
       if (e.key === 'Enter') { this.editAtom(h.id); return; }

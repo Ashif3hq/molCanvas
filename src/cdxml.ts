@@ -4,7 +4,7 @@
 // expanded structure as a nested fragment. Polymer repeat units are <bracketedgroup>s with SRU usage.
 import { Molecule } from 'openchemlib';
 import { analyze, toOCL } from './chem';
-import { ArrowKind, Atom, BOND, Bond, BondStereo, Doc, emptyDoc, fragments, Point, repeatUnitEnds, TextItem } from './model';
+import { ArrowKind, Atom, BOND, Bond, BondStereo, Doc, emptyDoc, fragments, Point, Radical, repeatUnitEnds, TextItem } from './model';
 import { FONT, labelInfo, textBox, textWidth } from './render';
 
 // ---------- a small XML reader (CDXML only needs elements, attributes and text) ----------
@@ -59,7 +59,7 @@ export interface CdxmlImport {
   notes: string[];
 }
 
-interface RawNode { id: string; type: string; el: string; p?: Point; charge: number; iso?: number; numH?: number; label?: string; labelP?: Point; extNum?: number; inner?: string[] }
+interface RawNode { id: string; type: string; el: string; p?: Point; charge: number; iso?: number; radical?: Radical; numH?: number; label?: string; labelP?: Point; extNum?: number; inner?: string[] }
 interface RawBond { id: string; b: string; e: string; order: string; display: string; beginExt?: number; endExt?: number }
 
 
@@ -104,8 +104,12 @@ export function fromCdxml(text: string): CdxmlImport {
       // the bracket's meaning is read from <bracketedgroup>; MolCanvas draws its own brackets
     } else if (type === 'Arc' && g.attrs.ArrowType && g.attrs.ArrowType !== 'NoHead') {
       skip('curved arrows');
-    } else if (type === 'Symbol' && /LonePair|Electron|Radical/.test(g.attrs.SymbolType ?? '')) {
-      skip('lone-pair and radical dots');
+    } else if (type === 'Symbol' && g.children.some((c) => c.tag === 'represent' && c.attrs.attribute === 'Radical')) {
+      // ChemDraw's radical dot, already carried by the node's Radical attribute
+    } else if (type === 'Symbol' && g.attrs.SymbolType === 'LonePair') {
+      // lone pairs follow from the structure; MolCanvas draws them with “Show lone pairs”
+    } else if (type === 'Symbol' && /Electron|Radical/.test(g.attrs.SymbolType ?? '')) {
+      skip('free-standing electron dots');
     } else if (type !== 'Symbol') {
       skip('shapes');
     }
@@ -142,7 +146,9 @@ export function fromCdxml(text: string): CdxmlImport {
       node.el = z > 0 && sym ? sym : '*';
       if (n.attrs.Isotope) node.iso = parseInt(n.attrs.Isotope, 10);
       if (n.attrs.NumHydrogens !== undefined) node.numH = parseInt(n.attrs.NumHydrogens, 10);
-      if (n.attrs.Radical && n.attrs.Radical !== 'None') skip('radicals');
+      const rad = n.attrs.Radical;
+      if (rad === 'Doublet' || rad === 'Triplet' || rad === 'Singlet') node.radical = rad.toLowerCase() as Radical;
+      else if (rad && rad !== 'None') skip('radicals');
     } else if (type === 'ExternalConnectionPoint') {
       node.extNum = parseInt(n.attrs.ExternalConnectionNum ?? '0', 10) || undefined;
     } else if (type === 'Nickname' || type === 'Fragment') {
@@ -227,6 +233,7 @@ export function fromCdxml(text: string): CdxmlImport {
     }
     const a: Atom = { id: doc.nextId++, el, x: n.p.x, y: n.p.y, charge: el === '*' ? 0 : n.charge };
     if (n.iso) a.iso = n.iso;
+    if (n.radical && el !== '*') a.radical = n.radical;
     doc.atoms.push(a);
     atomOf.set(n.id, a);
   }
@@ -388,6 +395,7 @@ export function toCdxml(doc: Doc): string {
   const frags = fragments(doc);
   const fragId = new Map<number, number>(); // atom id -> fragment id
   const brackets: string[] = [];
+  const symbols: string[] = [];
 
   for (const comp of frags) {
     const fid = newId();
@@ -411,6 +419,12 @@ export function toCdxml(doc: Doc): string {
         if (a.charge) attrs.push(`Charge="${a.charge}"`);
         if (a.iso) attrs.push(`Isotope="${a.iso}"`);
         const li = labelInfo(doc, a, nbrs.get(a.id)!, an);
+        if (a.radical) {
+          attrs.push(`Radical="${a.radical[0].toUpperCase()}${a.radical.slice(1)}"`);
+          // ChemDraw draws the dot as a symbol that represents the node's Radical attribute
+          const dy = li.shown ? FONT * 0.62 : 6.5;
+          symbols.push(`<graphic id="${newId()}" BoundingBox="${P(a.x, a.y - dy)} ${P(a.x, a.y - dy - 8)}" GraphicType="Symbol" SymbolType="${a.radical === 'doublet' ? 'Electron' : 'LonePair'}"><represent attribute="Radical" object="${a.id}"/></graphic>`);
+        }
         if (li.shown) {
           attrs.push(`NumHydrogens="${li.hCount}"`);
           const h = li.hCount ? `H${li.hCount > 1 ? li.hCount : ''}` : '';
@@ -467,7 +481,7 @@ export function toCdxml(doc: Doc): string {
   for (const t of doc.texts) {
     body.push(`<t id="${t.id}" p="${P(t.x, t.y)}" Justification="Left"><s font="3" size="${LABEL_SIZE}" face="96">${xmlEsc(t.text)}</s></t>`);
   }
-  body.push(...brackets);
+  body.push(...brackets, ...symbols);
   body.push(schemeXml(doc, frags, fragId, newId));
 
   const W = Math.max(540, Math.ceil(X(x1) + 72)), H = Math.max(720, Math.ceil(Y(y1) + 72));

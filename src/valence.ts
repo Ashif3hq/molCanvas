@@ -1,5 +1,5 @@
 // Valence rules and plain-language explanations of atoms and bonds.
-import { Atom, Bond, Doc, atomById, repeatUnitEnds } from './model';
+import { Atom, Bond, Doc, atomById, radicalElectrons, repeatUnitEnds, unpairedElectrons } from './model';
 
 export const ELEMENT_NAMES: Record<string, string> = {
   H: 'Hydrogen', He: 'Helium', Li: 'Lithium', Be: 'Beryllium', B: 'Boron', C: 'Carbon', N: 'Nitrogen', O: 'Oxygen',
@@ -56,6 +56,14 @@ export function typicalValence(el: string, charge: number): number {
   }
 }
 
+/**
+ * Bond limit for a specific atom: the charge-adjusted valence minus the electrons held as radical dots.
+ * A carbon radical (•CH3) forms 3 bonds, a carbene (:CH2) 2, an oxyl radical (RO•) 1, a chlorine atom (Cl•) none.
+ */
+export function valenceLimit(atom: Atom): number {
+  return maxValence(atom.el, atom.charge) - radicalElectrons(atom.radical);
+}
+
 export function bondOrderSum(doc: Doc, atomId: number): number {
   let s = 0;
   for (const b of doc.bonds) if (b.a === atomId || b.b === atomId) s += b.order;
@@ -72,7 +80,7 @@ export function valenceProblems(doc: Doc): ValenceProblem[] {
   const out: ValenceProblem[] = [];
   for (const a of doc.atoms) {
     const used = bondOrderSum(doc, a.id);
-    const max = maxValence(a.el, a.charge);
+    const max = valenceLimit(a);
     if (used > max) out.push({ atom: a, used, max });
   }
   return out;
@@ -85,9 +93,58 @@ export function explainProblem(p: ValenceProblem): string {
   const { atom, used, max } = p;
   if (atom.el === '*') return 'A polymer end (*) marks where the chain continues, so it can only have one bond.';
   const name = elementName(atom.el);
-  const ch = atom.charge ? ` with a ${atom.charge > 0 ? '+' : '−'}${Math.abs(atom.charge) > 1 ? Math.abs(atom.charge) : ''} charge` : '';
-  if (max <= 0) return `${name}${ch} cannot form bonds.`;
-  return `${name}${ch} can form at most ${plural(max, 'bond')} (valence ${max}). This change would give it ${used}.`;
+  const parts = [
+    atom.charge ? `a ${atom.charge > 0 ? '+' : '−'}${Math.abs(atom.charge) > 1 ? Math.abs(atom.charge) : ''} charge` : '',
+    atom.radical ? radicalPhrase(atom.radical) : '',
+  ].filter(Boolean);
+  const ch = parts.length ? ` with ${parts.join(' and ')}` : '';
+  const why = atom.radical ? ' Each radical electron takes the place of one bond.' : '';
+  if (max < 0) return `${name}${ch} is impossible: it has too few valence electrons for that.${why}`;
+  if (max === 0) return `${name}${ch} cannot form bonds.${why}`;
+  return `${name}${ch} can form at most ${plural(max, 'bond')} (valence ${max}). This change would give it ${used}.${why}`;
+}
+
+function radicalPhrase(r: Atom['radical']): string {
+  return r === 'doublet' ? 'one unpaired electron (radical)'
+    : r === 'triplet' ? 'two unpaired electrons (triplet diradical)'
+    : 'a non-bonding electron pair (singlet carbene-type)';
+}
+
+/** Common name for a charged or radical atom, e.g. "tertiary carbocation", "radical anion", "nitrene". */
+function speciesName(doc: Doc, atom: Atom, hCount: number): string {
+  const bonds = doc.bonds.filter((b) => b.a === atom.id || b.b === atom.id);
+  const used = bonds.reduce((s, b) => s + b.order, 0);
+  const subst = used + hCount;
+  const q = atom.charge, r = atom.radical;
+  const carbonClass = () => {
+    if (atom.el !== 'C' || subst !== 3 || bonds.some((b) => b.order !== 1)) return '';
+    const nc = bonds.filter((b) => atomById(doc, b.a === atom.id ? b.b : b.a)!.el === 'C').length;
+    return ['methyl', 'primary', 'secondary', 'tertiary'][nc] + ' ';
+  };
+  if (r === 'doublet') {
+    if (q > 0) return 'radical cation';
+    if (q < 0) return 'radical anion';
+    if (atom.el === 'C') return `${carbonClass()}carbon radical`;
+    if (atom.el === 'O') return subst === 1 ? 'oxyl radical (alkoxyl, hydroxyl or peroxyl)' : 'oxygen radical';
+    if (atom.el === 'N') return subst === 2 ? 'aminyl radical' : 'nitrogen radical';
+    if (subst === 0) return `${elementName(atom.el).toLowerCase()} atom (radical)`;
+    return `${elementName(atom.el).toLowerCase()}-centred radical`;
+  }
+  if (r) {
+    const spin = r === 'triplet' ? 'triplet' : 'singlet';
+    if (!q && ['C', 'Si'].includes(atom.el) && subst === 2) return `${spin} ${atom.el === 'C' ? 'carbene' : 'silylene'}`;
+    if (!q && atom.el === 'N' && subst === 1) return `${spin} nitrene`;
+    return r === 'triplet' ? 'diradical' : '';
+  }
+  if (atom.el === 'C' && q > 0) return `${carbonClass()}carbocation`;
+  if (atom.el === 'C' && q < 0) return `${carbonClass()}carbanion`;
+  if (atom.el === 'N' && q === 1 && subst === 4) return bonds.some((b) => b.order > 1) ? 'iminium or nitro-type N⁺' : 'ammonium cation';
+  if (atom.el === 'O' && q === 1 && subst === 3) return 'oxonium cation';
+  if (atom.el === 'O' && q === -1 && subst === 1) return 'oxyanion (alkoxide, phenoxide, carboxylate O⁻…)';
+  if (['F', 'Cl', 'Br', 'I'].includes(atom.el) && q === -1 && subst === 0) return `${{ F: 'fluoride', Cl: 'chloride', Br: 'bromide', I: 'iodide' }[atom.el]} anion`;
+  if (q > 0) return 'cation';
+  if (q < 0) return 'anion';
+  return '';
 }
 
 /** Hybridisation from bond orders (VSEPR-style estimate for drawing purposes). */
@@ -98,6 +155,8 @@ function hybridization(doc: Doc, atom: Atom, hCount: number): string {
   if (atom.el === 'H' || METALS.has(atom.el)) return '';
   if (triples || doubles >= 2) return 'sp';
   if (doubles === 1) return 'sp²';
+  if (atom.el === 'C' && atom.radical === 'doublet' && bonds.length + hCount === 3) return 'sp² (near-planar radical)';
+  if (atom.el === 'C' && atom.radical && bonds.length + hCount === 2) return atom.radical === 'triplet' ? 'sp (bent, triplet)' : 'sp² (singlet)';
   if (atom.el === 'C' && atom.charge !== 0 && bonds.length + hCount === 3) return atom.charge > 0 ? 'sp² (carbocation)' : 'sp³ (carbanion)';
   if (['C', 'N', 'O', 'Si'].includes(atom.el)) return 'sp³';
   return '';
@@ -112,7 +171,7 @@ export interface Explanation {
 export function explainAtom(doc: Doc, atom: Atom, hCount: number, aromaticRing: boolean): Explanation {
   const nb = doc.bonds.filter((b) => b.a === atom.id || b.b === atom.id).length;
   const used = bondOrderSum(doc, atom.id);
-  const max = maxValence(atom.el, atom.charge);
+  const max = valenceLimit(atom);
   if (atom.el === '*') {
     return {
       title: 'Polymer end (*)',
@@ -126,13 +185,14 @@ export function explainAtom(doc: Doc, atom: Atom, hCount: number, aromaticRing: 
   }
   const name = elementName(atom.el);
   const parts: string[] = [];
-  parts.push(`${plural(nb, 'bond')} (valence used ${used}/${max})`);
+  const species = speciesName(doc, atom, hCount);
+  if (species) parts.push(species);
+  parts.push(`${plural(nb, 'bond')} (valence used ${used}/${Math.max(0, max)})`);
   if (hCount) parts.push(`${hCount} implicit H`);
-  const ve = VALENCE_ELECTRONS[atom.el];
-  if (ve !== undefined) {
-    const lp = Math.floor((ve - atom.charge - used - hCount) / 2);
-    if (lp > 0) parts.push(`${plural(lp, 'lone pair')}`);
-  }
+  const lp = lonePairs(atom, used, hCount);
+  if (lp > 0) parts.push(`${plural(lp, 'lone pair')}`);
+  const unpaired = unpairedElectrons(atom.radical);
+  if (unpaired) parts.push(`${plural(unpaired, 'unpaired electron')}${unpaired === 2 ? ' (triplet)' : ''}`);
   const hyb = hybridization(doc, atom, hCount);
   if (hyb) parts.push(aromaticRing && hyb === 'sp²' ? 'sp², aromatic ring' : hyb);
   if (atom.charge) parts.push(`formal charge ${atom.charge > 0 ? '+' : '−'}${Math.abs(atom.charge)}`);
@@ -140,8 +200,15 @@ export function explainAtom(doc: Doc, atom: Atom, hCount: number, aromaticRing: 
   const warn = used > max;
   const hint = warn
     ? `Too many bonds: ${explainProblem({ atom, used, max })}`
-    : 'Press a letter (C, N, O, S…) to change the element, + or − for charge, Delete to remove.';
+    : 'Press a letter (C, N, O, S…) to change the element, + or − for charge, . for a radical, Delete to remove.';
   return { title: `${name} (${atom.el})`, detail: `${parts.join(' · ')}. ${hint}`, warn };
+}
+
+/** Lone pairs from the octet count: valence electrons − charge − bonds − H − unpaired electrons, halved. */
+export function lonePairs(atom: Atom, used: number, hCount: number): number {
+  const ve = VALENCE_ELECTRONS[atom.el];
+  if (ve === undefined) return 0;
+  return Math.max(0, Math.floor((ve - atom.charge - used - hCount - unpairedElectrons(atom.radical)) / 2));
 }
 
 /** Recognise a few common functional groups so the info bar can name them. */
