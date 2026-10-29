@@ -66,6 +66,11 @@ The app is ad-hoc signed but not notarised by Apple yet, so macOS warns you the 
 
 1. Open the `.dmg` and drag **MolCanvas** into **Applications**.
 2. In Applications, right-click MolCanvas and choose **Open**, then **Open** again.
+3. On macOS 15 (Sequoia) or newer, if there is no **Open** button: click **Done**, then go to
+   **System Settings → Privacy & Security** and click **Open Anyway** next to the MolCanvas message.
+
+Every release also carries these steps as `How-to-install-MolCanvas-on-Mac.txt`
+(full guide: [docs/INSTALL-macOS.md](docs/INSTALL-macOS.md)).
 
 If macOS says the app **"is damaged and can't be opened"** (this happens with some browsers,
 which mark downloads as quarantined), remove the quarantine flag once in Terminal and open it
