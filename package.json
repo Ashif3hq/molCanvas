@@ -16,7 +16,7 @@
     "app:build": "tauri build"
   },
   "author": "Ashif",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "openchemlib": "^9.25.1"
   },

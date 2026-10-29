@@ -3,7 +3,7 @@ name = "molcanvas"
 version = "0.3.0"
 description = "MolCanvas: a free, modern chemical structure editor"
 authors = ["Ashif"]
-license = "MIT"
+license-file = "../LICENSE"
 edition = "2021"
 
 [lib]

@@ -1,21 +1,34 @@
-MIT License
+MolCanvas
+Copyright (c) 2026 Ashif. All rights reserved.
 
-Copyright (c) 2026 Ashif
+The MolCanvas source code, artwork and documentation in this repository are the property of
+Ashif. The code is published so that it can be read and reviewed; publishing it does not
+grant any licence to it, except as stated below.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+You MAY, free of charge:
+  - use the official MolCanvas Mac app downloaded from this repository's Releases page, and
+    the official web version at https://ashif3hq.github.io/molCanvas/, for any purpose,
+    including commercial and academic work;
+  - use, publish and sell the drawings, images and files you create with MolCanvas;
+  - read the source code, and fork or copy it on GitHub only as far as GitHub's Terms of
+    Service require for viewing it.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+You MAY NOT, without prior written permission from Ashif:
+  - copy, modify, adapt, translate or create derivative works of the source code or artwork;
+  - redistribute, publish, sublicense, sell or host the software or any modified version of it,
+    in source or compiled form, including as part of another product or service;
+  - remove or change this notice or the author credit.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+To ask for permission, open an issue at https://github.com/Ashif3hq/molCanvas/issues or contact
+Ashif via https://github.com/Ashif3hq.
+
+Versions of MolCanvas published before this notice was added (up to and including v0.3.0) were
+released under the MIT License, and copies obtained under those terms keep them.
+
+Third-party components bundled with MolCanvas (such as OpenChemLib, Tauri and their
+dependencies) remain under their own licences.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
