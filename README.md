@@ -9,7 +9,7 @@ No install or sign-up needed: the web version runs entirely in your browser.
 
 ![MolCanvas screenshot](docs/screenshot.png)
 
-MolCanvas is a lightweight, open-source alternative to commercial drawing tools. It focuses on
+MolCanvas is a lightweight, free, source-available alternative to commercial drawing tools. It focuses on
 the things bench chemists do every day: drawing structures quickly, pulling common molecules
 from a library, sketching polymer repeat units, and getting a clean figure into a paper,
 slide deck or lab notebook.
@@ -126,4 +126,4 @@ web version is published to the `gh-pages` branch and served by GitHub Pages
 
 ## Author
 
-Created by **Ashif**. Released under the [MIT License](LICENSE).
+Created by **Ashif**. All rights reserved: free to use, but the code may not be copied, modified or redistributed without permission. See [LICENSE](LICENSE). (Versions up to v0.3.0 were MIT-licensed.)
