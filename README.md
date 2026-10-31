@@ -38,7 +38,7 @@ slide deck or lab notebook.
   - rings and scaffolds, solvents, reagents, amino acids, biomolecules and common drugs
 - **Polymer tools:** turn any vinyl monomer into its repeat unit in one click, draw your own
   repeat units with the `*` end tool, set the degree of polymerisation and get Mₙ ≈ n × M₀.
-  The Bracket tool (`[`) brackets any block inside a chain, so copolymers read –[A]ₙ–[B]ₘ– with
+  The Bracket tool (`[`) brackets any block inside a chain (click the bond on each side of it), so copolymers read –[A]ₙ–[B]ₘ– with
   a separate count and M₀ for each block.
 - **Live properties:** formula, molecular weight, exact mass, elemental analysis, cLogP, TPSA,
   H-bond donors/acceptors, rotatable bonds and stereocentres, for the whole drawing or the
