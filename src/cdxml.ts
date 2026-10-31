@@ -5,7 +5,7 @@
 import { Molecule } from 'openchemlib';
 import { analyze, toOCL } from './chem';
 import { ArrowKind, Atom, BOND, Bond, BondStereo, Doc, emptyDoc, fragments, Point, Radical, repeatUnitEnds, TextItem } from './model';
-import { FONT, labelInfo, textBox, textWidth } from './render';
+import { bracketMarks, FONT, labelInfo, textBox, textWidth } from './render';
 
 // ---------- a small XML reader (CDXML only needs elements, attributes and text) ----------
 
@@ -288,8 +288,12 @@ export function fromCdxml(text: string): CdxmlImport {
     if (ends.length === 2 && crossing.length === 2) {
       for (const e of ends) { e.el = '*'; e.charge = 0; delete e.iso; e.sub = g.attrs.SRULabel || 'n'; }
       for (const b of doc.bonds) if (ends.some((e) => e.id === b.a || e.id === b.b)) { b.order = 1; b.stereo = 'none'; }
+    } else if (crossing.length === 2) {
+      // a block inside a longer chain (e.g. one block of a copolymer) keeps its brackets and count
+      const atoms = (g.attrs.BracketedObjectIDs ?? '').split(/\s+/).map((id) => atomOf.get(id)?.id).filter((id): id is number => id !== undefined);
+      if (atoms.length) (doc.brackets ??= []).push({ id: doc.nextId++, atoms, sub: g.attrs.SRULabel || 'n' });
     } else {
-      notes.push('A repeat-unit bracket that sits inside a longer chain was not converted: MolCanvas repeat units need both bracketed bonds to end the molecule.');
+      notes.push('A repeat-unit bracket that crosses more or fewer than two bonds was not converted.');
     }
   }
 
@@ -450,29 +454,27 @@ export function toCdxml(doc: Doc): string {
     out.push('</fragment>');
     body.push(out.join(''));
 
-    // Repeat unit: one bracket across each bond to a * end, grouped as a structural repeat unit (SRU).
-    const stars = comp.filter((id) => ends.has(id)).map((id) => byId.get(id)!);
-    if (stars.length === 2) {
-      const attach: string[] = [];
-      const last = stars[0].x >= stars[1].x ? stars[0] : stars[1];
-      for (const s of stars) {
-        const inner = nbrs.get(s.id)![0];
-        const bond = doc.bonds.find((b) => (b.a === s.id && b.b === inner.id) || (b.b === s.id && b.a === inner.id))!;
-        const dx = inner.x - s.x, dy = inner.y - s.y, len = Math.hypot(dx, dy) || 1;
-        const ux = dx / len, uy = dy / len;
-        const c = { x: s.x + dx * 0.42, y: s.y + dy * 0.42 }, h = BOND * 0.5;
-        // the bracket's lips point to the left of its start-to-end direction, so run it along (uy, -ux)
-        const gid = newId();
-        const tag = s === last
-          ? `<objecttag TagType="String" Name="bracketusage" Value="${xmlEsc(s.sub ?? 'n')}"><t p="${P(c.x + 4, c.y + h + 11)}"><s font="3" size="${LABEL_SIZE * 0.75}" face="2">${xmlEsc(s.sub ?? 'n')}</s></t></objecttag>`
-          : '';
-        const bb = `${P(c.x - uy * h, c.y + ux * h)} ${P(c.x + uy * h, c.y - ux * h)}`;
-        brackets.push(`<graphic id="${gid}" BoundingBox="${bb}" GraphicType="Bracket" BracketType="Square" LipSize="60"${tag ? ' BracketUsage="SRU"' : ''}>${tag}</graphic>`);
-        attach.push(`<bracketattachment id="${newId()}" GraphicID="${gid}"><crossingbond id="${newId()}" BondID="${bond.id}" InnerAtomID="${inner.id}"/></bracketattachment>`);
-      }
-      const inside = comp.filter((id) => !ends.has(id));
-      brackets.push(`<bracketedgroup id="${newId()}" BracketedObjectIDs="${inside.join(' ')}" BracketUsage="SRU" PolymerRepeatPattern="HeadToTail" SRULabel="${xmlEsc(last.sub ?? 'n')}">${attach.join('')}</bracketedgroup>`);
+  }
+
+  // Repeat units: one bracket across each crossed bond, grouped as a structural repeat unit (SRU).
+  // Automatic ones sit on the bonds to two * ends; Bracket-tool groups (copolymer blocks) inside a chain.
+  const marks = bracketMarks(doc);
+  for (const gid0 of new Set(marks.map((m) => m.group))) {
+    const ms = marks.filter((m) => m.group === gid0);
+    const group = (doc.brackets ?? []).find((g) => g.id === gid0);
+    const label = ms.find((m) => m.sub)?.sub?.text ?? 'n';
+    const inside = group ? group.atoms : (frags.find((c) => c.includes(gid0)) ?? []).filter((id) => !ends.has(id));
+    const attach: string[] = [];
+    for (const m of ms) {
+      const gid = newId();
+      const tag = m.sub
+        ? `<objecttag TagType="String" Name="bracketusage" Value="${xmlEsc(label)}"><t p="${P(m.sub.x, m.sub.y)}"><s font="3" size="${LABEL_SIZE * 0.75}" face="2">${xmlEsc(label)}</s></t></objecttag>`
+        : '';
+      // the bracket's lips point to the left of its start-to-end direction, so run it along (uy, -ux)
+      brackets.push(`<graphic id="${gid}" BoundingBox="${P(m.e1.x, m.e1.y)} ${P(m.e2.x, m.e2.y)}" GraphicType="Bracket" BracketType="Square" LipSize="60"${tag ? ' BracketUsage="SRU"' : ''}>${tag}</graphic>`);
+      attach.push(`<bracketattachment id="${newId()}" GraphicID="${gid}"><crossingbond id="${newId()}" BondID="${m.bond}" InnerAtomID="${m.inner}"/></bracketattachment>`);
     }
+    brackets.push(`<bracketedgroup id="${newId()}" BracketedObjectIDs="${inside.join(' ')}" BracketUsage="SRU" PolymerRepeatPattern="HeadToTail" SRULabel="${xmlEsc(label)}">${attach.join('')}</bracketedgroup>`);
   }
 
   for (const ar of doc.arrows) {

@@ -43,11 +43,22 @@ export interface TextItem {
   text: string;
 }
 
+/**
+ * A repeat-unit bracket pair drawn around a block of atoms inside a chain, e.g. each block of a
+ * block copolymer –[A]ₙ–[B]ₘ–. The two brackets cross the two bonds that leave the block.
+ */
+export interface BracketGroup {
+  id: number;
+  atoms: number[];
+  sub: string; // count shown on the right-hand bracket ("n", "m", "50"…)
+}
+
 export interface Doc {
   atoms: Atom[];
   bonds: Bond[];
   arrows: Arrow[];
   texts: TextItem[];
+  brackets?: BracketGroup[];
   nextId: number;
 }
 
@@ -57,7 +68,7 @@ export interface Point {
 }
 
 export function emptyDoc(): Doc {
-  return { atoms: [], bonds: [], arrows: [], texts: [], nextId: 1 };
+  return { atoms: [], bonds: [], arrows: [], texts: [], brackets: [], nextId: 1 };
 }
 
 export function cloneDoc(d: Doc): Doc {
@@ -110,6 +121,10 @@ export function neighbors(d: Doc, atomId: number): Atom[] {
 export function removeAtoms(d: Doc, ids: Set<number>) {
   d.atoms = d.atoms.filter((a) => !ids.has(a.id));
   d.bonds = d.bonds.filter((b) => !ids.has(b.a) && !ids.has(b.b));
+  if (d.brackets) {
+    for (const g of d.brackets) g.atoms = g.atoms.filter((id) => !ids.has(id));
+    d.brackets = d.brackets.filter((g) => g.atoms.length);
+  }
 }
 
 /** Remove any objects (atoms, bonds, arrows, texts) whose id is in the set. */
@@ -118,6 +133,7 @@ export function removeObjects(d: Doc, ids: Set<number>) {
   d.bonds = d.bonds.filter((b) => !ids.has(b.id));
   d.arrows = d.arrows.filter((a) => !ids.has(a.id));
   d.texts = d.texts.filter((t) => !ids.has(t.id));
+  if (d.brackets) d.brackets = d.brackets.filter((g) => !ids.has(g.id));
 }
 
 /** Carbon atoms left with no bonds after an erase are removed, like ChemDraw does. */
@@ -169,6 +185,7 @@ export function subDoc(d: Doc, atomIds: Set<number>, objIds?: Set<number>): Doc 
     out.arrows = d.arrows.filter((a) => objIds.has(a.id)).map((a) => ({ ...a }));
     out.texts = d.texts.filter((t) => objIds.has(t.id)).map((t) => ({ ...t }));
   }
+  out.brackets = (d.brackets ?? []).filter((g) => g.atoms.every((id) => atomIds.has(id))).map((g) => ({ ...g, atoms: [...g.atoms] }));
   out.nextId = d.nextId;
   return out;
 }
@@ -205,6 +222,11 @@ export function mergeInto(d: Doc, frag: Doc, dx = 0, dy = 0, atomMap = new Map<n
     const id = newId(d);
     d.texts.push({ ...t, id, x: t.x + dx, y: t.y + dy });
     map.set(t.id, id);
+  }
+  for (const g of frag.brackets ?? []) {
+    const atoms = g.atoms.map((id) => map.get(id)).filter((id): id is number => id !== undefined);
+    if (!atoms.length) continue;
+    (d.brackets ??= []).push({ id: newId(d), atoms, sub: g.sub });
   }
   return map;
 }
@@ -245,10 +267,13 @@ export function segDist(p: Point, a: Point, b: Point): number {
  */
 export function repeatUnitEnds(d: Doc): Set<number> {
   const out = new Set<number>();
+  // a molecule with in-chain brackets keeps its * ends as plain asterisks outside the brackets
+  const bracketed = new Set(validBrackets(d).flatMap((c) => c.group.atoms));
   const degree = new Map<number, number>();
   for (const b of d.bonds) { degree.set(b.a, (degree.get(b.a) ?? 0) + 1); degree.set(b.b, (degree.get(b.b) ?? 0) + 1); }
   const byId = new Map(d.atoms.map((a) => [a.id, a]));
   for (const comp of fragments(d)) {
+    if (comp.some((id) => bracketed.has(id))) continue;
     const ends = comp.filter((id) => byId.get(id)!.el === '*' && degree.get(id) === 1);
     if (ends.length === 2) ends.forEach((id) => out.add(id));
   }
@@ -263,4 +288,43 @@ export function radicalElectrons(r?: Radical): number {
 /** Unpaired electrons: 1 for a doublet, 2 for a triplet, 0 for a singlet (its two electrons are paired). */
 export function unpairedElectrons(r?: Radical): number {
   return r === 'doublet' ? 1 : r === 'triplet' ? 2 : 0;
+}
+
+export interface Crossing { bond: Bond; inner: Atom; outer: Atom }
+
+/** The bonds a bracket group crosses (one end inside the group, the other outside). */
+export function bracketCrossings(d: Doc, g: BracketGroup): Crossing[] {
+  const inside = new Set(g.atoms);
+  const byId = new Map(d.atoms.map((a) => [a.id, a]));
+  const out: Crossing[] = [];
+  for (const b of d.bonds) {
+    const ia = inside.has(b.a), ib = inside.has(b.b);
+    if (ia === ib) continue;
+    const inner = byId.get(ia ? b.a : b.b), outer = byId.get(ia ? b.b : b.a);
+    if (inner && outer) out.push({ bond: b, inner, outer });
+  }
+  return out;
+}
+
+/** Bracket groups that can be drawn: a connected block of atoms left by exactly two bonds. */
+export function validBrackets(d: Doc): { group: BracketGroup; crossings: Crossing[] }[] {
+  return (d.brackets ?? []).map((group) => ({ group, crossings: bracketCrossings(d, group) }))
+    .filter((c) => c.crossings.length === 2);
+}
+
+/**
+ * Why a set of atoms cannot be a repeat unit, or null when it can: it must be one connected block
+ * with exactly two bonds leading out of it (the bonds the brackets cross).
+ */
+export function bracketProblem(d: Doc, atomIds: Set<number>): string | null {
+  if (!atomIds.size) return 'Drag a box around the atoms of one repeat unit.';
+  const crossing = d.bonds.filter((b) => atomIds.has(b.a) !== atomIds.has(b.b)).length;
+  const sub = subDoc(d, atomIds);
+  if (fragments(sub).length > 1) return 'The box holds atoms that are not connected to each other. Box one repeat unit at a time.';
+  if (crossing !== 2) {
+    return crossing < 2
+      ? 'A repeat unit needs two bonds leading out of the box, one on each side, for the brackets to cross. Draw the chain bonds (or * ends) on both sides first.'
+      : `${crossing} bonds lead out of the box; a repeat unit needs exactly two. Make the box cover whole side groups.`;
+  }
+  return null;
 }

@@ -1,7 +1,7 @@
 // Chemistry layer: converts between the MolCanvas document and OpenChemLib molecules
 // for valence, rings, formulas, properties, SMILES and MOL files.
 import { Molecule, MoleculeProperties } from 'openchemlib';
-import { BOND, Doc, emptyDoc, fragments, Point, Radical, repeatUnitEnds } from './model';
+import { BOND, Doc, emptyDoc, fragments, Point, Radical, repeatUnitEnds, validBrackets } from './model';
 import { valenceProblems } from './valence';
 
 type Mol = InstanceType<typeof Molecule>;
@@ -225,6 +225,8 @@ export interface Properties {
   rotatable?: number;
   stereocenters?: number;
   isPolymer: boolean;
+  /** In-chain bracketed blocks (copolymer): the formula and mass hold one of each block. */
+  bracketBlocks: number;
   fragments: number;
 }
 
@@ -244,13 +246,15 @@ export function properties(doc: Doc): Properties | null {
   if (known && total > 0) {
     for (const [el, n] of hillOrder(counts)) composition.push({ el, pct: (100 * WEIGHTS[el] * n) / total });
   }
-  const isPolymer = repeatUnitEnds(doc).size > 0;
+  const bracketBlocks = validBrackets(doc).length;
+  const isPolymer = repeatUnitEnds(doc).size > 0 || bracketBlocks > 0;
   const props: Properties = {
     formula: hillFormula(counts, mol),
     mw: mf.relativeWeight,
     exactMass: mf.absoluteWeight,
     composition,
     isPolymer,
+    bracketBlocks,
     fragments: fragments(doc).length,
   };
   try {

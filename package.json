@@ -11,6 +11,7 @@
     "check:export": "tsx scripts/check-export.ts",
     "check:cdxml": "tsx scripts/check-cdxml.ts",
     "check:radicals": "tsx scripts/check-radicals.ts",
+    "check:brackets": "tsx scripts/check-brackets.ts",
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "tauri build"
