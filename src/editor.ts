@@ -239,6 +239,7 @@ export class Editor {
 
   setTool(t: Tool) {
     this.tool = t;
+    this.pendingBracketBond = null;
     this.ghost = null;
     this.ghostProblem = null;
     this.closeInput();
@@ -260,7 +261,7 @@ export class Editor {
       case 'charge': return `Charge: click an atom to ${t.delta > 0 ? 'add a positive' : 'add a negative'} charge (or cancel the opposite one).`;
       case 'radical': return 'Radical: click an atom to cycle • (radical) → •• triplet → •• singlet → none. Hover an atom and press . for the same.';
       case 'arrow': return 'Arrow: drag to draw a reaction arrow (snaps to 15°), click to drop a standard arrow.';
-      case 'bracket': return 'Bracket: drag a box around one repeat unit (it needs a bond leaving on each side). Click a bracket to set its count; each block of a copolymer has its own.';
+      case 'bracket': return 'Bracket: click a bond on one side of a repeat unit, then a bond on the other side (or drag a box around it). Click a bracket to set its count; each block of a copolymer has its own.';
       case 'text': return 'Text: click to add a label (digits after letters become subscripts, e.g. CH2Cl2). Click a polymer end to edit n.';
       case 'template': return `${t.preset.name}: click to place${t.preset.kind === 'group' ? ', or click an atom to attach' : ''}. Esc to stop.`;
     }
@@ -333,6 +334,11 @@ export class Editor {
       const p = this.pointer, s = this.drag.start;
       html += `<rect x="${Math.min(p.x, s.x)}" y="${Math.min(p.y, s.y)}" width="${Math.abs(p.x - s.x)}" height="${Math.abs(p.y - s.y)}" fill="${this.theme.select}" fill-opacity="0.08" stroke="${this.theme.select}" stroke-width="${1 / this.zoom}" stroke-dasharray="${4 / this.zoom} ${3 / this.zoom}"/>`;
     }
+    const pb = this.tool.kind === 'bracket' && this.pendingBracketBond !== null ? this.doc.bonds.find((b) => b.id === this.pendingBracketBond) : undefined;
+    if (pb) {
+      const A = atomById(this.doc, pb.a)!, B = atomById(this.doc, pb.b)!;
+      html += `<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="${this.theme.select}" stroke-width="10" stroke-opacity="0.45" stroke-linecap="round" pointer-events="none"/>`;
+    }
     this.world.innerHTML = html;
     this.world.setAttribute('transform', `translate(${this.tx},${this.ty}) scale(${this.zoom})`);
     const g = 20 * this.zoom;
@@ -378,7 +384,9 @@ export class Editor {
       const own = groups.has(m.group);
       if (!own && k !== 'text' && k !== 'bracket') continue;
       const onSub = m.sub && p.x >= m.sub.x - 3 && p.x <= m.sub.x + 8 * m.sub.text.length + 3 && p.y >= m.sub.y - 12 && p.y <= m.sub.y + 3;
-      if (onSub || segDist(p, m.e1, m.e2) < tol) return own ? { type: 'bracket', id: m.group } : { type: 'atom', id: m.group };
+      // with the Bracket tool, a click on the bond itself picks the bond (to start or end a unit)
+      const onBond = k === 'bracket' && (() => { const b = this.doc.bonds.find((x) => x.id === m.bond)!; return segDist(p, atomById(this.doc, b.a)!, atomById(this.doc, b.b)!) < tol; })();
+      if (onSub || (!onBond && segDist(p, m.e1, m.e2) < tol)) return own ? { type: 'bracket', id: m.group } : { type: 'atom', id: m.group };
     }
     return null;
   }
@@ -640,8 +648,9 @@ export class Editor {
       }
       case 'bracket': {
         if (hit?.type === 'bracket') this.editBracket(hit.id);
+        else if (hit?.type === 'bond') this.bracketBondClick(hit.id);
         else if (hit?.type === 'atom' && atomById(this.doc, hit.id)?.el === '*') this.editAtom(hit.id);
-        else this.onWarn('Drag a box around the atoms of one repeat unit to bracket it.');
+        else this.onWarn('Click a bond on one side of the repeat unit, then a bond on the other side. You can also drag a box around the unit.');
         return;
       }
       case 'text': {
@@ -776,6 +785,53 @@ export class Editor {
     const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
     const ids = new Set(this.doc.atoms.filter((at) => at.x >= x0 && at.x <= x1 && at.y >= y0 && at.y <= y1 &&
       !(at.el === '*' && bondsOf(this.doc, at.id).length <= 1)).map((at) => at.id));
+    this.addBracket(ids);
+  }
+
+  /**
+   * Bracket tool, click mode: the first bond clicked is remembered; the second one closes the unit,
+   * which is everything between the two bonds (with its side groups).
+   */
+  private bracketBondClick(bondId: number) {
+    const first = this.pendingBracketBond;
+    if (first === null || !this.doc.bonds.some((b) => b.id === first)) {
+      this.pendingBracketBond = bondId;
+      this.render();
+      this.onHover({ title: 'Bracket', detail: 'Now click the bond on the other side of the repeat unit. Click the same bond again or press Esc to cancel.' });
+      return;
+    }
+    this.pendingBracketBond = null;
+    if (first === bondId) { this.render(); this.emitHover(); return; }
+    const ids = this.unitBetween(first, bondId);
+    if (!ids) {
+      this.render();
+      this.onWarn('These two bonds do not cut out one unit: the atoms between them are still joined to the rest another way (for example through a ring). Click two chain bonds, one on each side of the unit.');
+      return;
+    }
+    this.addBracket(ids);
+  }
+
+  /** Atoms cut off by removing bonds b1 and b2 that touch both of them, or null if there is no such part. */
+  private unitBetween(b1: number, b2: number): Set<number> | null {
+    const B1 = this.doc.bonds.find((b) => b.id === b1)!, B2 = this.doc.bonds.find((b) => b.id === b2)!;
+    const adj = new Map<number, number[]>(this.doc.atoms.map((a) => [a.id, []]));
+    for (const b of this.doc.bonds) if (b.id !== b1 && b.id !== b2) { adj.get(b.a)!.push(b.b); adj.get(b.b)!.push(b.a); }
+    const part = (start: number) => {
+      const seen = new Set([start]);
+      const stack = [start];
+      while (stack.length) for (const n of adj.get(stack.pop()!)!) if (!seen.has(n)) { seen.add(n); stack.push(n); }
+      return seen;
+    };
+    let best: Set<number> | null = null;
+    for (const start of [B1.a, B1.b]) {
+      const c = part(start);
+      const ends1 = +c.has(B1.a) + +c.has(B1.b), ends2 = +c.has(B2.a) + +c.has(B2.b);
+      if (ends1 === 1 && ends2 === 1 && (!best || c.size < best.size)) best = c;
+    }
+    return best;
+  }
+
+  private addBracket(ids: Set<number>) {
     const problem = bracketProblem(this.doc, ids);
     if (problem) { this.render(); this.onWarn(problem); return; }
     if ((this.doc.brackets ?? []).some((g) => g.atoms.some((id) => ids.has(id)))) {
@@ -791,6 +847,8 @@ export class Editor {
     this.commit((d) => { id = d.nextId++; (d.brackets ??= []).push({ id, atoms: [...ids], sub }); });
     if (id) this.editBracket(id);
   }
+
+  private pendingBracketBond: number | null = null;
 
   /** Type the count for one bracketed repeat unit (n, m, 50, x…). */
   editBracket(id: number) {
