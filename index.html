@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="MolCanvas: a free, modern chemical structure editor for organic and polymer chemists." />
+    <title>MolCanvas</title>
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <script type="module" crossorigin src="./assets/index-BiuzhQKh.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BMl1OwOe.css">
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar" data-tauri-drag-region>
+        <div class="brand" data-tauri-drag-region>
+          <img src="./icon.svg" alt="" width="22" height="22" />
+          <span>MolCanvas</span>
+        </div>
+        <div class="group" id="file-actions"></div>
+        <div class="group" id="edit-actions"></div>
+        <div class="group" id="transform-actions"></div>
+        <div class="spacer" data-tauri-drag-region></div>
+        <div class="group" id="view-actions"></div>
+      </header>
+
+      <nav class="tools" id="tools" aria-label="Drawing tools"></nav>
+
+      <aside class="library" id="library">
+        <div class="lib-search">
+          <span class="lib-search-icon" id="lib-search-icon"></span>
+          <input id="lib-filter" type="search" placeholder="Search presets: styrene, PMMA, Boc…" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="chips" id="lib-cats"></div>
+        <div class="lib-grid" id="lib-grid"></div>
+      </aside>
+
+      <main class="canvas-wrap" id="canvas-wrap">
+        <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="empty-hint" id="empty-hint">
+          <h2>Start drawing</h2>
+          <p>Click anywhere with the bond tool, drop a ring, or pick a molecule or polymer from the library.</p>
+          <p class="keys"><kbd>Hover</kbd> + <kbd>N</kbd> <kbd>O</kbd> <kbd>S</kbd>… sets elements · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> on a bond sets its order · <kbd>Space</kbd> + drag pans · pinch to zoom</p>
+        </div>
+        <div class="infobar" id="status" role="status" aria-live="polite"><b id="info-title"></b><span id="info-detail"></span></div>
+        <div class="toast" id="toast"></div>
+      </main>
+
+      <aside class="inspector" id="inspector">
+        <section>
+          <h3 id="scope-title">Properties</h3>
+          <div id="props"></div>
+        </section>
+        <section id="polymer-section">
+          <h3>Polymer tools</h3>
+          <div id="polymer"></div>
+        </section>
+        <section>
+          <h3>SMILES</h3>
+          <div class="smiles-box">
+            <code id="smiles"></code>
+            <button class="mini" id="copy-smiles" title="Copy SMILES">Copy</button>
+          </div>
+          <div class="name-row">
+            <button class="mini wide" id="lookup-name" title="Look the structure up on PubChem (internet)">Identify name (PubChem)</button>
+            <div id="name-out" class="muted small"></div>
+          </div>
+        </section>
+        <section>
+          <h3>Molecular modelling</h3>
+          <div class="btn-row">
+            <button class="mini" id="copy-3d" title="Copy a 3D MOL block with hydrogens (MMFF94s+ minimised)">Copy 3D MOL</button>
+            <button class="mini" id="copy-2d" title="Copy the 2D MOL block (V2000)">Copy 2D MOL</button>
+          </div>
+          <div class="muted small" style="margin-top:6px">Paste into Avogadro, Chem3D or another modelling program. Export also saves 3D SDF, MOL2, PDB and XYZ.</div>
+        </section>
+        <section>
+          <h3>Add from text</h3>
+          <textarea id="import-text" rows="3" placeholder="SMILES, MOL file, or a name (e.g. ibuprofen)" spellcheck="false"></textarea>
+          <button class="mini wide primary" id="import-btn">Add to canvas</button>
+        </section>
+        <section id="solubility-section">
+          <h3><button class="collapse" id="solubility-toggle" aria-expanded="false" aria-controls="solubility" title="Show or hide solubility parameters"><span class="chev" aria-hidden="true"></span>Solubility parameters</button></h3>
+          <div id="solubility" hidden></div>
+        </section>
+        <footer class="credit">MolCanvas · free to use · by <a id="author-link" href="https://www.linkedin.com/in/mohammed-ashif-arakkal-moideenkutty-5b3128250" target="_blank" rel="noopener noreferrer" title="Ashif on LinkedIn">Ashif</a></footer>
+      </aside>
+    </div>
+
+    <div class="popover" id="ptable" hidden></div>
+    <div class="menu" id="export-menu" hidden></div>
+  </body>
+</html>
