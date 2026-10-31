@@ -418,3 +418,5 @@ textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent
   .brand span, .icon-btn .lbl { display: none; }
   .empty-hint { width: calc(100% - 32px); }
 }
+.block-row { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.block-row .field { margin-top: 4px; }

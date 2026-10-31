@@ -4,12 +4,13 @@ import { fromCdxml } from './cdxml';
 import {
   addAtom, addBond, Arrow, ArrowKind, atomById, BOND, BondStereo, bondsOf, cloneDoc, Doc, emptyDoc, fragments,
   mergeInto, neighbors, Point, Radical, bounds, pruneLoneCarbons, removeObjects, segDist, subDoc, dist, centroid, TextItem,
+  bracketProblem, repeatUnitEnds,
 } from './model';
 import {
   chain, dirVec, findAtomNear, freeDirection, Placement, placeTemplate, ringAtPoint, ringOnAtom, ringOnBond,
   orientPolymer, rotatePoint, singleBond, snapAngle,
 } from './geometry';
-import { renderDoc, RenderOpts, textBox, Theme } from './render';
+import { bracketMarks, renderDoc, RenderOpts, textBox, Theme } from './render';
 import type { Preset } from './presets';
 import { Explanation, explainAtom, explainBond, explainProblem, valenceProblems } from './valence';
 
@@ -24,6 +25,7 @@ export type Tool =
   | { kind: 'radical' }
   | { kind: 'arrow'; arrow: ArrowKind }
   | { kind: 'text' }
+  | { kind: 'bracket' }
   | { kind: 'template'; preset: Preset; frag: Doc };
 
 type Hit =
@@ -31,6 +33,7 @@ type Hit =
   | { type: 'bond'; id: number }
   | { type: 'arrow'; id: number }
   | { type: 'text'; id: number }
+  | { type: 'bracket'; id: number }
   | null;
 
 interface Drag {
@@ -180,6 +183,10 @@ export class Editor {
       const what = { forward: 'Reaction arrow: reactants on the left give products on the right.', equilibrium: 'Equilibrium arrows: the reaction runs in both directions.', retro: 'Retrosynthesis arrow: the target (left) can be made from the precursors (right).', resonance: 'Resonance arrow: both structures are contributors to one real molecule.' }[ar.kind];
       return { title: 'Arrow', detail: `${what} Drag with the Select tool to move it.` };
     }
+    if (hit.type === 'bracket') {
+      const g = (this.doc.brackets ?? []).find((x) => x.id === hit.id)!;
+      return { title: `Repeat unit ×${g.sub}`, detail: `The bracketed block repeats ${g.sub} times along the chain. Each bracketed block keeps its own count, so a block copolymer reads –[A]ₙ–[B]ₘ–. Click it with the Bracket or Text tool to change the count; erase it to remove the brackets.` };
+    }
     const t = this.doc.texts.find((x) => x.id === hit.id)!;
     return { title: 'Text', detail: `“${t.text}”. Double-click to edit. Digits after letters are shown as subscripts.` };
   }
@@ -253,6 +260,7 @@ export class Editor {
       case 'charge': return `Charge: click an atom to ${t.delta > 0 ? 'add a positive' : 'add a negative'} charge (or cancel the opposite one).`;
       case 'radical': return 'Radical: click an atom to cycle • (radical) → •• triplet → •• singlet → none. Hover an atom and press . for the same.';
       case 'arrow': return 'Arrow: drag to draw a reaction arrow (snaps to 15°), click to drop a standard arrow.';
+      case 'bracket': return 'Bracket: drag a box around one repeat unit (it needs a bond leaving on each side). Click a bracket to set its count; each block of a copolymer has its own.';
       case 'text': return 'Text: click to add a label (digits after letters become subscripts, e.g. CH2Cl2). Click a polymer end to edit n.';
       case 'template': return `${t.preset.name}: click to place${t.preset.kind === 'group' ? ', or click an atom to attach' : ''}. Esc to stop.`;
     }
@@ -342,6 +350,8 @@ export class Editor {
       if (d < bd) { bd = d; best = { type: 'atom', id: a.id }; }
     }
     if (best) return best;
+    const bh = this.bracketHit(p);
+    if (bh) return bh;
     bd = Math.max(4, 6 / this.zoom);
     for (const b of this.doc.bonds) {
       const A = atomById(this.doc, b.a)!, B = atomById(this.doc, b.b)!;
@@ -355,6 +365,20 @@ export class Editor {
     }
     for (const ar of this.doc.arrows) {
       if (segDist(p, { x: ar.x1, y: ar.y1 }, { x: ar.x2, y: ar.y2 }) < 7) return { type: 'arrow', id: ar.id };
+    }
+    return null;
+  }
+
+  /** A bracket line or its count label under p (in-chain bracket groups; * end counts via the Text tool). */
+  private bracketHit(p: Point): Hit {
+    const tol = Math.max(4, 6 / this.zoom);
+    const groups = new Set((this.doc.brackets ?? []).map((g) => g.id));
+    const k = this.tool.kind;
+    for (const m of bracketMarks(this.doc)) {
+      const own = groups.has(m.group);
+      if (!own && k !== 'text' && k !== 'bracket') continue;
+      const onSub = m.sub && p.x >= m.sub.x - 3 && p.x <= m.sub.x + 8 * m.sub.text.length + 3 && p.y >= m.sub.y - 12 && p.y <= m.sub.y + 3;
+      if (onSub || segDist(p, m.e1, m.e2) < tol) return own ? { type: 'bracket', id: m.group } : { type: 'atom', id: m.group };
     }
     return null;
   }
@@ -416,6 +440,8 @@ export class Editor {
       drag.mode = 'erase';
       drag.original = cloneDoc(this.doc);
       this.eraseAt(p, true);
+    } else if (t.kind === 'bracket') {
+      drag.mode = hit ? 'none' : 'rubber';
     } else if (t.kind === 'arrow') {
       drag.mode = 'arrow';
     } else if (t.kind === 'bond' || t.kind === 'chain' || t.kind === 'atom') {
@@ -502,6 +528,11 @@ export class Editor {
         });
       }
       this.render();
+      return;
+    }
+    if (drag.mode === 'rubber' && t.kind === 'bracket') {
+      if (drag.moved) this.bracketBox(drag.start, p);
+      else this.click(p, drag.hit, e);
       return;
     }
     if (drag.mode === 'rubber') {
@@ -607,8 +638,15 @@ export class Editor {
         if (hit?.type === 'atom') this.cycleRadical(hit.id);
         return;
       }
+      case 'bracket': {
+        if (hit?.type === 'bracket') this.editBracket(hit.id);
+        else if (hit?.type === 'atom' && atomById(this.doc, hit.id)?.el === '*') this.editAtom(hit.id);
+        else this.onWarn('Drag a box around the atoms of one repeat unit to bracket it.');
+        return;
+      }
       case 'text': {
-        if (hit?.type === 'text') this.editText(hit.id);
+        if (hit?.type === 'bracket') this.editBracket(hit.id);
+        else if (hit?.type === 'text') this.editText(hit.id);
         else if (hit?.type === 'atom') this.editAtom(hit.id);
         else if (!hit) this.newText(p);
         return;
@@ -728,6 +766,44 @@ export class Editor {
     for (const bd of this.doc.bonds) if (this.sel.has(bd.a) && this.sel.has(bd.b)) this.sel.add(bd.id);
     for (const ar of this.doc.arrows) if (inside({ x: ar.x1, y: ar.y1 }) && inside({ x: ar.x2, y: ar.y2 })) this.sel.add(ar.id);
     for (const t of this.doc.texts) if (inside(t)) this.sel.add(t.id);
+  }
+
+  /**
+   * Bracket tool: the atoms in the box become one repeat unit with its own count. Polymer * ends
+   * caught in the box stay outside the brackets, as chemists draw *–[unit]ₙ–*.
+   */
+  private bracketBox(a: Point, b: Point) {
+    const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+    const ids = new Set(this.doc.atoms.filter((at) => at.x >= x0 && at.x <= x1 && at.y >= y0 && at.y <= y1 &&
+      !(at.el === '*' && bondsOf(this.doc, at.id).length <= 1)).map((at) => at.id));
+    const problem = bracketProblem(this.doc, ids);
+    if (problem) { this.render(); this.onWarn(problem); return; }
+    if ((this.doc.brackets ?? []).some((g) => g.atoms.some((id) => ids.has(id)))) {
+      this.render();
+      this.onWarn('Some of these atoms are already inside a bracketed unit. Each atom can belong to one repeat unit: click that bracket to change its count, or erase it first.');
+      return;
+    }
+    // the next unused letter, so blocks of a copolymer get n, m, p… unless the user types numbers
+    const used = new Set((this.doc.brackets ?? []).map((g) => g.sub));
+    for (const s of this.doc.atoms) if (s.el === '*' && repeatUnitEnds(this.doc).has(s.id)) used.add(s.sub ?? 'n');
+    const sub = ['n', 'm', 'p', 'q', 'x', 'y', 'z'].find((l) => !used.has(l)) ?? 'n';
+    let id = 0;
+    this.commit((d) => { id = d.nextId++; (d.brackets ??= []).push({ id, atoms: [...ids], sub }); });
+    if (id) this.editBracket(id);
+  }
+
+  /** Type the count for one bracketed repeat unit (n, m, 50, x…). */
+  editBracket(id: number) {
+    const m = bracketMarks(this.doc).find((x) => x.group === id && x.sub);
+    const g = (this.doc.brackets ?? []).find((x) => x.id === id);
+    if (!g) return;
+    const at = m?.sub ? { x: m.sub.x, y: m.sub.y - 2 } : centroid(this.doc.atoms.filter((a) => g.atoms.includes(a.id)));
+    this.openInput(at, g.sub, (v) => this.commit((d) => { const x = (d.brackets ?? []).find((q) => q.id === id); if (x) x.sub = v.trim() || 'n'; }), 'n');
+  }
+
+  /** Set the count of every repeat unit at once (homopolymer n), or of one bracket group. */
+  setBracketCount(id: number, n: string) {
+    this.commit((d) => { const g = (d.brackets ?? []).find((q) => q.id === id); if (g) g.sub = n || 'n'; });
   }
 
   /** Dropping a single dragged atom onto another atom merges them. */
@@ -1006,7 +1082,7 @@ export class Editor {
     if (h && (h.type === 'atom' ? HOTKEY_ELEMENTS[e.key] : ['1', '2', '3'].includes(e.key))) return;
     const shortcuts: Record<string, Tool> = {
       v: { kind: 'select' }, e: { kind: 'erase' }, b: { kind: 'bond', order: 1, stereo: 'none' }, g: { kind: 'chain' },
-      r: { kind: 'ring', size: 6, aromatic: true }, t: { kind: 'text' }, a: { kind: 'arrow', arrow: 'forward' },
+      r: { kind: 'ring', size: 6, aromatic: true }, t: { kind: 'text' }, a: { kind: 'arrow', arrow: 'forward' }, '[': { kind: 'bracket' },
       '1': { kind: 'bond', order: 1, stereo: 'none' }, '2': { kind: 'bond', order: 2, stereo: 'none' }, '3': { kind: 'bond', order: 3, stereo: 'none' },
     };
     const tool = shortcuts[e.key];

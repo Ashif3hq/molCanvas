@@ -61,5 +61,6 @@ export const ICONS: Record<string, string> = {
   search: svg('<circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/>'),
   library: svg('<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>'),
   table: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M3 14.5h18M8 5v14M13 5v14M18 5v14"/>'),
+  bracket: svg('<path d="M7 4H4v16h3M13 4h3v16h-3"/><text x="17.5" y="22" font-size="6.5" fill="currentColor" stroke="none" font-style="italic">m</text>'),
   polymer: svg('<path d="M6 5c-2 3-2 11 0 14M18 5c2 3 2 11 0 14"/><polyline points="8,14 10.5,10 13.5,14 16,10"/><text x="19" y="22" font-size="6" fill="currentColor" stroke="none" font-style="italic">n</text>'),
 };

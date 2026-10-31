@@ -4,7 +4,7 @@ import { fromSmiles, isElement, properties, toMolfile, toSmiles } from './chem';
 import { ICONS } from './icons';
 import { CATEGORIES, Preset, PRESETS } from './presets';
 import { DARK, LIGHT, standaloneSvg, atomColor } from './render';
-import { Doc, emptyDoc } from './model';
+import { addAtom, addBond, Doc, emptyDoc, subDoc, validBrackets } from './model';
 import { orientPolymer } from './geometry';
 import { isDesktop, isMac, openExternal, openTextFile, saveFile } from './platform';
 import { solubility, SolubilityResult } from './solubility';
@@ -202,6 +202,7 @@ const TOOL_DEFS: (ToolDef | 'sep')[] = [
   'sep',
   ...['C', 'H', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I'].map((el): ToolDef => ({ key: `el-${el}`, label: el, cls: 'el', title: `${el} atom (hover an atom and press ${el === 'Cl' ? 'L' : el === 'Br' ? 'B' : el})`, tool: { kind: 'atom', el } })),
   { key: 'el-*', icon: 'polymer', title: 'Polymer end / attachment point (*): drawn as a repeat-unit bracket', tool: { kind: 'atom', el: '*' } },
+  { key: 'bracket', icon: 'bracket', title: 'Repeat-unit brackets ([): drag a box around one unit; each block gets its own count', tool: { kind: 'bracket' } },
   { key: 'ptable', icon: 'table', title: 'Periodic table', tool: { kind: 'atom', el: 'C' } },
   'sep',
   { key: 'arrow', icon: 'arrow', title: 'Reaction arrow (A)', tool: { kind: 'arrow', arrow: 'forward' } },
@@ -226,6 +227,7 @@ const TOOL_EXPLAIN: Record<string, string> = {
   r5: 'Five-membered ring (cyclopentane, furanose, pyrrolidine skeleton).', r6: 'Six-membered ring (cyclohexane, pyranose, piperidine skeleton).',
   r7: 'Seven-membered ring.', r8: 'Eight-membered ring.',
   'el-*': 'Polymer end (*): marks where a repeat unit continues. Each * has exactly one bond and MolCanvas draws a bracket with n across it.',
+  bracket: 'Brackets with a count around one repeat unit inside a chain. Drag a box around the unit (a bond must leave it on each side), then type its count. Bracket each block of a copolymer separately to show –[A]ₙ–[B]ₘ– with different counts. Click a bracket to change its count. Shortcut [.',
   ptable: 'Pick any element from the periodic table.',
   plus: 'Add a positive formal charge (e.g. ammonium N⁺, carbocation C⁺). The allowed number of bonds changes with charge.',
   minus: 'Add a negative formal charge (e.g. alkoxide O⁻, carbanion C⁻). Click a + atom to cancel its charge.',
@@ -444,9 +446,9 @@ function updateInspector() {
     const comp = pr.composition.map((c) => `<span style="width:${c.pct}%;background:${COMP_COLORS[c.el] ?? '#aeaeb2'}"></span>`).join('');
     const legend = pr.composition.map((c) => `<span><i style="background:${COMP_COLORS[c.el] ?? '#aeaeb2'}"></i>${c.el} ${c.pct.toFixed(2)}%</span>`).join('');
     props.innerHTML = `
-      <div class="formula">${formulaHtml(pr.formula)}${pr.isPolymer ? '<span class="muted small"> per repeat unit</span>' : ''}</div>
+      <div class="formula">${formulaHtml(pr.formula)}${pr.bracketBlocks ? '<span class="muted small"> with one of each bracketed unit</span>' : pr.isPolymer ? '<span class="muted small"> per repeat unit</span>' : ''}</div>
       <div class="kv">
-        <span class="k">${pr.isPolymer ? 'Repeat unit mass (M₀)' : 'Molecular weight'}</span><span class="v">${fmt(pr.mw)} g/mol</span>
+        <span class="k">${pr.bracketBlocks ? 'Mass, one of each unit' : pr.isPolymer ? 'Repeat unit mass (M₀)' : 'Molecular weight'}</span><span class="v">${fmt(pr.mw)} g/mol</span>
         <span class="k">Exact mass</span><span class="v">${fmt(pr.exactMass, 4)}</span>
         ${pr.isPolymer ? '' : `
         <span class="k">cLogP</span><span class="v">${fmt(pr.logP)}</span>
@@ -466,8 +468,17 @@ function updateInspector() {
   if (smiles !== lastSmiles) { $('name-out').textContent = ''; lastSmiles = smiles; }
 }
 
+/** One bracketed block as its own repeat unit: the atoms inside, with a * where each bracket is crossed. */
+function blockUnit(doc: Doc, b: ReturnType<typeof validBrackets>[number]): Doc {
+  const d = subDoc(doc, new Set(b.group.atoms));
+  for (const c of b.crossings) addBond(d, c.inner.id, addAtom(d, '*', c.outer.x, c.outer.y).id);
+  return d;
+}
+
 function updatePolymer(m0: number | null) {
   const el = $('polymer');
+  const blocks = validBrackets(editor.doc);
+  if (blocks.length) { updateBlocks(el, blocks); return; }
   const stars = editor.doc.atoms.filter((a) => a.el === '*');
   const n = stars[0]?.sub ?? 'n';
   const nNum = parseFloat(n);
@@ -478,13 +489,39 @@ function updatePolymer(m0: number | null) {
         <span class="k">Mₙ ≈ n × M₀</span><span class="v">${Number.isFinite(nNum) ? `${(nNum * m0).toLocaleString(undefined, { maximumFractionDigits: 0 })} g/mol` : 'set n'}</span>
       </div>
       <div class="muted small" style="margin-top:4px">End groups are ignored in this estimate.</div>` :
-      '<div class="muted small">Draw a monomer (or pick one from the library) and turn it into a repeat unit. Use the <b>*</b> tool to mark polymer ends.</div>'}
+      '<div class="muted small">Draw a monomer (or pick one from the library) and turn it into a repeat unit. Use the <b>*</b> tool to mark polymer ends, or the <b>[ ]</b> Bracket tool to bracket units inside a chain (copolymer blocks with different counts).</div>'}
     <button class="mini wide" id="polymerize">Polymerise C=C monomer → repeat unit</button>`;
   const dp = el.querySelector<HTMLInputElement>('#dp');
   dp?.addEventListener('change', () => editor.setRepeatCount(dp.value.trim()));
   el.querySelector('#polymerize')!.addEventListener('click', () => {
     if (!editor.polymerize()) toast('No non-ring C=C double bond found to polymerise.');
   });
+}
+
+/** Polymer panel for bracketed blocks (copolymers): each block's formula, M₀ and its own count. */
+function updateBlocks(el: HTMLElement, blocks: ReturnType<typeof validBrackets>) {
+  const rows = blocks.map((b, i) => {
+    let p = null;
+    try { p = properties(blockUnit(editor.doc, b)); } catch { p = null; }
+    return { b, i, p, n: parseFloat(b.group.sub) };
+  });
+  const allNum = rows.every((r) => r.p && Number.isFinite(r.n) && /^\s*\d+(\.\d+)?\s*$/.test(r.b.group.sub));
+  const mn = allNum ? rows.reduce((s, r) => s + r.n * r.p!.mw, 0) : null;
+  el.innerHTML = `
+    ${rows.map((r) => `
+      <div class="block-row">
+        <div class="kv">
+          <span class="k">Unit ${r.i + 1}${r.p ? ` · ${formulaHtml(r.p.formula)}` : ''}</span><span class="v">${r.p ? `M₀ ${fmt(r.p.mw)} g/mol` : '–'}</span>
+        </div>
+        <div class="field"><label for="blk-${r.b.group.id}">Count</label><input id="blk-${r.b.group.id}" data-block="${r.b.group.id}" value="${esc(r.b.group.sub)}" /></div>
+      </div>`).join('')}
+    <div class="kv" style="margin-top:8px">
+      <span class="k">Mₙ ≈ Σ count × M₀</span><span class="v">${mn !== null ? `${mn.toLocaleString(undefined, { maximumFractionDigits: 0 })} g/mol` : 'enter numbers'}</span>
+    </div>
+    <div class="muted small" style="margin-top:4px">Each bracketed block has its own count. Use letters (n, m) for a general formula or numbers for a mass estimate; end groups outside the brackets are ignored. Draw more blocks with the Bracket tool ([).</div>`;
+  for (const inp of el.querySelectorAll<HTMLInputElement>('input[data-block]')) {
+    inp.addEventListener('change', () => editor.setBracketCount(Number(inp.dataset.block), inp.value.trim()));
+  }
 }
 
 const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

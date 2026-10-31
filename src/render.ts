@@ -1,7 +1,7 @@
 // SVG renderer for MolCanvas documents. Produces markup strings so the same code
 // drives the live canvas, library thumbnails and SVG/PNG export.
 import { Analysis, analyze } from './chem';
-import { Atom, Bond, BOND, Doc, Point, Arrow, TextItem, fragments, repeatUnitEnds } from './model';
+import { Atom, Bond, BOND, Doc, Point, Arrow, TextItem, fragments, repeatUnitEnds, validBrackets } from './model';
 import { lonePairs } from './valence';
 
 export interface Theme {
@@ -304,33 +304,77 @@ function electronDots(ctx: Ctx, a: Atom, li: LabelInfo, color: string): string {
   return out;
 }
 
-/** Polymer brackets: drawn across every bond to a '*' end atom, with the subscript on the right-most one. */
+/** One drawn bracket: a line across a bond from e1 to e2, with lips pointing along (ux, uy) into the unit. */
+export interface BracketMark {
+  group: number; // bracket group id, or the * end atom id for an automatic repeat-unit bracket
+  bond: number;
+  inner: number;
+  e1: Point;
+  e2: Point;
+  ux: number;
+  uy: number;
+  c: Point;
+  sub?: { x: number; y: number; text: string };
+}
+
+function mark(group: number, bond: number, inner: Atom, outer: Atom, t: number): Omit<BracketMark, 'sub'> {
+  const dx = inner.x - outer.x, dy = inner.y - outer.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const c = { x: outer.x + dx * t, y: outer.y + dy * t };
+  const h = BOND * 0.5;
+  return { group, bond, inner: inner.id, e1: { x: c.x - uy * h, y: c.y + ux * h }, e2: { x: c.x + uy * h, y: c.y - ux * h }, ux, uy, c };
+}
+
+function withSub(marks: Omit<BracketMark, 'sub'>[], text: string): BracketMark[] {
+  if (!marks.length) return [];
+  const last = marks.reduce((m, s) => (s.c.x > m.c.x + 0.5 || (Math.abs(s.c.x - m.c.x) <= 0.5 && s.c.y > m.c.y) ? s : m), marks[0]);
+  return marks.map((m) => {
+    if (m !== last) return m;
+    const low = m.e1.y > m.e2.y ? m.e1 : m.e2;
+    return { ...m, sub: { x: low.x + 3, y: low.y + 14, text } };
+  });
+}
+
+/**
+ * Every polymer bracket in the document: automatic ones across the bonds to two * ends, and the
+ * in-chain bracket groups drawn with the Bracket tool (copolymer blocks), each with its own count.
+ */
+export function bracketMarks(doc: Doc): BracketMark[] {
+  const out: BracketMark[] = [];
+  const byId = new Map(doc.atoms.map((a) => [a.id, a]));
+  const ends = repeatUnitEnds(doc);
+  for (const comp of fragments(doc)) {
+    const stars = comp.filter((id) => ends.has(id)).map((id) => byId.get(id)!);
+    if (stars.length !== 2) continue;
+    // the right-most * carries the count, and its id names the unit
+    const last = stars[0].x >= stars[1].x ? stars[0] : stars[1];
+    const ms = stars.map((s) => {
+      const b = doc.bonds.find((x) => x.a === s.id || x.b === s.id)!;
+      return mark(last.id, b.id, byId.get(b.a === s.id ? b.b : b.a)!, s, 0.42);
+    });
+    out.push(...withSub(ms, last.sub ?? 'n'));
+  }
+  const groups = validBrackets(doc);
+  const perBond = new Map<number, number>();
+  for (const g of groups) for (const c of g.crossings) perBond.set(c.bond.id, (perBond.get(c.bond.id) ?? 0) + 1);
+  for (const g of groups) {
+    // two blocks meeting at one bond each get their own bracket, close to their own atoms: ]ₙ[
+    const ms = g.crossings.map((c) => mark(g.group.id, c.bond.id, c.inner, c.outer, (perBond.get(c.bond.id) ?? 1) > 1 ? 0.68 : 0.5));
+    out.push(...withSub(ms, g.group.sub || 'n'));
+  }
+  return out;
+}
+
+/** Polymer brackets, with the count on the right-most bracket of each repeat unit. */
 function bracketsSvg(ctx: Ctx): string {
   let out = '';
   const fg = ctx.opts.theme.fg;
-  const frags = fragments(ctx.doc);
-  const ends = repeatUnitEnds(ctx.doc);
-  for (const comp of frags) {
-    const stars = comp.map((id) => ctx.byId.get(id)!).filter((a) => ends.has(a.id));
-    if (!stars.length) continue;
-    const last = stars.reduce((m, s) => (s.x > m.x ? s : m), stars[0]);
-    for (const s of stars) {
-      const X = ctx.nbrs.get(s.id)![0];
-      const dx = X.x - s.x, dy = X.y - s.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const ux = dx / len, uy = dy / len;
-      const px = -uy, py = ux;
-      const t = 0.42;
-      const cx = s.x + dx * t, cy = s.y + dy * t;
-      const h = BOND * 0.5, serif = 5;
-      const e1 = { x: cx + px * h, y: cy + py * h }, e2 = { x: cx - px * h, y: cy - py * h };
-      out += `<path d="M${f(e1.x + ux * serif)},${f(e1.y + uy * serif)} L${f(e1.x)},${f(e1.y)} L${f(e2.x)},${f(e2.y)} L${f(e2.x + ux * serif)},${f(e2.y + uy * serif)}" fill="none" stroke="${fg}" stroke-width="${LINE}" stroke-linejoin="miter"/>`;
-      if (s === last) {
-        const low = e1.y > e2.y ? e1 : e2;
-        const sub = s.sub ?? 'n';
-        out += `<text x="${f(low.x + 4)}" y="${f(low.y + 11)}" font-size="${FONT * 0.85}" font-style="italic" fill="${fg}" data-sub="${s.id}">${esc(sub)}</text>`;
-      }
-    }
+  const serif = 5;
+  for (const m of bracketMarks(ctx.doc)) {
+    const { e1, e2, ux, uy } = m;
+    out += `<path d="M${f(e1.x + ux * serif)},${f(e1.y + uy * serif)} L${f(e1.x)},${f(e1.y)} L${f(e2.x)},${f(e2.y)} L${f(e2.x + ux * serif)},${f(e2.y + uy * serif)}" fill="none" stroke="${fg}" stroke-width="${LINE}" stroke-linejoin="miter"/>`;
+    if (m.sub) out += `<text x="${f(m.sub.x)}" y="${f(m.sub.y)}" font-size="${FONT * 0.85}" font-style="italic" fill="${fg}" data-sub="${m.group}">${esc(m.sub.text)}</text>`;
   }
   return out;
 }
@@ -396,6 +440,11 @@ function highlights(ctx: Ctx): string {
   const hover = ctx.opts.hover;
   const { theme } = ctx.opts;
   let out = '';
+  const hg = (ctx.doc.brackets ?? []).find((g) => g.id === hover);
+  if (hg) {
+    for (const id of hg.atoms) { const a = ctx.byId.get(id); if (a) out += `<circle cx="${f(a.x)}" cy="${f(a.y)}" r="11" fill="${theme.hover}" fill-opacity="0.22"/>`; }
+    for (const m of bracketMarks(ctx.doc)) if (m.group === hg.id) out += line(m.e1.x, m.e1.y, m.e2.x, m.e2.y, theme.hover, 10, ' stroke-opacity="0.35"');
+  }
   for (const b of ctx.doc.bonds) {
     const A = ctx.byId.get(b.a)!, B = ctx.byId.get(b.b)!;
     const selected = sel.has(b.id) || (sel.has(b.a) && sel.has(b.b));
