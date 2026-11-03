@@ -1,0 +1,25 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask anything about using MolCanvas: drawing, polymers, solubility tools, import and export.
+        Found a bug instead? Please [open a bug report](https://github.com/Ashif3hq/molCanvas/issues/new/choose).
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do, and what have you tried so far?
+    validations:
+      required: true
+  - type: textarea
+    id: structure
+    attributes:
+      label: Structure or file (optional)
+      description: A SMILES string, an attached `.mol`/`.cdxml` file, or a screenshot.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Where are you using MolCanvas?
+      options:
+        - Mac app
+        - Web version

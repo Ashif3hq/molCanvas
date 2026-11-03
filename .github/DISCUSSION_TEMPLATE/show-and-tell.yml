@@ -1,0 +1,18 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Show what you made with MolCanvas: figures for papers, theses, posters, teaching
+        material or LinkedIn posts. Everything you draw with MolCanvas is yours to use.
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you make?
+      description: Attach an image and tell us a little about it.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: Tips for others (optional)
+      description: Which tools or presets did you use? Anything that was hard?

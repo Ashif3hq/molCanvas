@@ -24,6 +24,12 @@ modify and distribute it as part of MolCanvas, under MolCanvas's own licence ter
 cannot be used to relicense your contribution, or MolCanvas, under any other licence. You will be
 credited in the commit history and the release notes.
 
+## Questions and discussion
+
+For questions about using MolCanvas, ideas you'd like to talk through, or things you made with it,
+use [Discussions](https://github.com/Ashif3hq/molCanvas/discussions). Keep issues for bugs,
+concrete feature requests and preset requests.
+
 ## Reporting bugs
 
 Search the [existing issues](https://github.com/Ashif3hq/molCanvas/issues) first. A good report
