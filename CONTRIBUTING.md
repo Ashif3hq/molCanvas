@@ -20,8 +20,9 @@ source project in the usual sense, which affects contributions:
 
 **By opening a pull request you confirm that the work is your own (or you have the right to
 submit it), and you grant Ashif a perpetual, worldwide, royalty-free, irrevocable licence to use,
-modify, relicense and distribute it as part of MolCanvas.** You will be credited in the commit
-history and the release notes.
+modify and distribute it as part of MolCanvas, under MolCanvas's own licence terms.** This grant
+cannot be used to relicense your contribution, or MolCanvas, under any other licence. You will be
+credited in the commit history and the release notes.
 
 ## Reporting bugs
 
