@@ -9,8 +9,9 @@ on:
 
 jobs:
   build:
-    # macos-latest runs on Apple Silicon, so this produces a native arm64 (M1–M5) build.
-    runs-on: macos-latest
+    # macos-15 runs on Apple Silicon, so this produces a native arm64 (M1–M5) build.
+    # Pinned rather than macos-latest: on 2026-11-03 macos-latest jobs sat unassigned until GitHub cancelled them.
+    runs-on: macos-15
     permissions:
       contents: write
     steps:
