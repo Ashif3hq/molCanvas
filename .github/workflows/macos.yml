@@ -36,6 +36,7 @@ jobs:
       - run: npm run check:export
       - run: npm run check:cdxml
       - run: npm run check:radicals
+      - run: npm run check:brackets
 
       - name: Build app and DMG
         id: tauri
