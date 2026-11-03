@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "check:presets": "tsx scripts/check-presets.ts",
     "check:solubility": "tsx scripts/check-solubility.ts",
+    "check:hansen": "tsx scripts/check-hansen.ts",
     "check:export": "tsx scripts/check-export.ts",
     "check:cdxml": "tsx scripts/check-cdxml.ts",
     "check:radicals": "tsx scripts/check-radicals.ts",

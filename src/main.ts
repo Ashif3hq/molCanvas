@@ -4,10 +4,12 @@ import { fromSmiles, isElement, properties, toMolfile, toSmiles } from './chem';
 import { ICONS } from './icons';
 import { CATEGORIES, Preset, PRESETS } from './presets';
 import { DARK, LIGHT, standaloneSvg, atomColor } from './render';
-import { addAtom, addBond, Doc, emptyDoc, subDoc, validBrackets } from './model';
+import { addAtom, addBond, Doc, emptyDoc, fragments, subDoc, validBrackets } from './model';
 import { orientPolymer } from './geometry';
 import { isDesktop, isMac, openExternal, openTextFile, saveFile } from './platform';
-import { solubility, SolubilityResult } from './solubility';
+import { Solubility, solubility, SolubilityResult } from './solubility';
+import { CompositionBasis, mixtureHSP } from './hansen';
+import { openAnalyzer, setDrawnTarget, setNotifier } from './solvent-ui';
 import { build3D, Model3D, mol2, molfile3D, pdb, sdf3D, xyz } from './modeling';
 import { loadChemResources } from './resources';
 import { fromCdxml, toCdxml } from './cdxml';
@@ -526,20 +528,36 @@ function updateBlocks(el: HTMLElement, blocks: ReturnType<typeof validBrackets>)
 
 const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 let solDensity = '';
+const ANALYZER_BTN = '<button class="mini wide" id="open-analyzer" title="Compare with solvents, blends and your own solubility tests">Solvent analyzer…</button>';
+function wireAnalyzerButton(el: HTMLElement) {
+  el.querySelector('#open-analyzer')?.addEventListener('click', () => openAnalyzer());
+}
+
+// Layer 1: group-contribution parameters of one structure. A drawing with several molecules goes to the
+// mixture calculation instead, which needs the composition.
 function updateSolubility(doc: Doc, mass: number | undefined) {
   const el = $('solubility');
   if (!doc.atoms.some((a) => a.el !== '*')) {
-    el.innerHTML = '<div class="muted small">Draw a molecule or a polymer repeat unit to estimate its Hansen and Hildebrand solubility parameters.</div>';
+    setDrawnTarget(null);
+    el.innerHTML = `<div class="muted small">Draw a molecule or a polymer repeat unit to estimate its Hansen and Hildebrand solubility parameters.</div>${ANALYZER_BTN}`;
+    wireAnalyzerButton(el);
     return;
   }
+  const parts = fragments(doc).filter((ids) => doc.atoms.some((a) => ids.includes(a.id) && a.el !== '*'));
+  if (parts.length > 1) { updateMixture(el, doc, parts); return; }
   const density = parseFloat(solDensity);
   let r: SolubilityResult;
   try { r = solubility(doc, { density: density > 0 ? density : undefined, mass }); } catch { r = { ok: false, reason: 'This structure could not be analysed.' }; }
   if (!r.ok) {
-    el.innerHTML = `<div class="muted small">Not available: ${esc(r.reason)}</div>`;
+    setDrawnTarget(null);
+    el.innerHTML = `<div class="muted small">Not available: ${esc(r.reason)}</div>${ANALYZER_BTN}`;
+    wireAnalyzerButton(el);
     return;
   }
   const s = r.value;
+  let label = 'drawn structure';
+  try { label = toSmiles(doc) || label; } catch { /* keep the generic label */ }
+  setDrawnTarget(s.hansen ? { label, hsp: s.hansen, v: s.v, m: mass, isPolymer: s.isPolymer } : null);
   const u = ' MPa<sup>½</sup>';
   el.innerHTML = `
     <div class="kv">
@@ -554,8 +572,10 @@ function updateSolubility(doc: Doc, mass: number | undefined) {
     </div>
     ${s.hvkMissing ? `<div class="muted small method">Hansen values unavailable: ${esc(s.hvkMissing)}.</div>` : ''}
     <div class="field"><label for="sol-density">Density ρ (optional)</label><input id="sol-density" value="${esc(solDensity)}" placeholder="g/cm³" inputmode="decimal" /></div>
-    <div class="muted method">Group contribution${s.isPolymer ? ' per repeat unit (the two * ends are joined)' : ''}: Hansen by Hoftyzer–Van Krevelen, Hildebrand by Fedors. V = ${s.vSource === 'density' ? 'M/ρ from your density' : `Fedors volume${mass ? '; enter a density to use M/ρ instead' : ''}`}. Estimates, typically within ~10 %; no symmetry correction to δ<sub>P</sub>, and fluorinated or strongly H-bonded structures are less reliable.</div>
-    <details class="groups"><summary>Groups counted</summary>${s.groups.map((g) => `${g.n} × ${esc(g.label)}`).join('<br/>')}</details>`;
+    <div class="muted method">Group contribution${s.isPolymer ? ' per repeat unit (the two * ends are joined)' : ''}: Hansen by Hoftyzer–Van Krevelen, Hildebrand by Fedors. V = ${s.vSource === 'density' ? 'M/ρ from your density' : `Fedors volume${mass ? '; enter a density to use M/ρ instead' : ''}`}. Estimates, typically within ~10 %; no symmetry correction to δ<sub>P</sub>, and fluorinated or strongly H-bonded structures are less reliable.${s.isPolymer ? ' This gives the polymer’s HSP, not its solubility sphere radius R₀: that needs solvent tests (Solvent analyzer).' : ''}</div>
+    <details class="groups"><summary>Groups counted</summary>${s.groups.map((g) => `${g.n} × ${esc(g.label)}`).join('<br/>')}</details>
+    ${ANALYZER_BTN}`;
+  wireAnalyzerButton(el);
   const inp = el.querySelector<HTMLInputElement>('#sol-density')!;
   inp.addEventListener('change', () => {
     const v = inp.value.trim().replace(',', '.');
@@ -564,6 +584,81 @@ function updateSolubility(doc: Doc, mass: number | undefined) {
     updateInspector();
   });
 }
+
+// Mixture of drawn molecules: each component gets its own Layer 1 estimate, then the composition the user
+// enters is turned into volume fractions and the Hansen parameters are volume-fraction averaged.
+let mixBasis: CompositionBasis = 'mole';
+const mixAmounts = new Map<string, string>();
+function updateMixture(el: HTMLElement, doc: Doc, parts: number[][]) {
+  const comps = parts.map((ids, i) => {
+    const sub = subDoc(doc, new Set(ids));
+    let smiles = `component ${i + 1}`;
+    try { smiles = toSmiles(sub) || smiles; } catch { /* keep the generic label */ }
+    let r: SolubilityResult;
+    try { r = solubility(sub); } catch { r = { ok: false, reason: 'could not be analysed' }; }
+    let m: number | undefined;
+    try { m = properties(sub)?.mw; } catch { m = undefined; }
+    return { smiles, r, m, isPolymer: r.ok && r.value.isPolymer };
+  });
+  const amount = (smi: string) => mixAmounts.get(smi) ?? '1';
+  const missing = comps.find((c) => !c.r.ok || !c.r.value.hansen);
+  let result = '';
+  if (missing) {
+    setDrawnTarget(null);
+    const why = !missing.r.ok ? missing.r.reason : missing.r.value.hvkMissing;
+    result = `<div class="muted small method">No mixture value: ${esc(missing.smiles)} has no Hansen estimate (${esc(why ?? 'not covered')}).</div>`;
+  } else {
+    const mix = mixtureHSP(comps.map((c) => {
+      const s = (c.r as { ok: true; value: Solubility }).value;
+      return { name: c.smiles, hsp: s.hansen!, v: s.v, m: c.m, amount: parseFloat(amount(c.smiles)) };
+    }), mixBasis);
+    if (!mix.ok) {
+      setDrawnTarget(null);
+      result = `<div class="muted small method">${esc(mix.reason)}</div>`;
+    } else {
+      const h = mix.value.hsp, u = ' MPa<sup>½</sup>';
+      setDrawnTarget({ label: `mixture of ${comps.length}`, hsp: h, v: mix.value.v, isPolymer: comps.some((c) => c.isPolymer) });
+      result = `
+        <div class="kv" style="margin-top:8px">
+          <span class="k">Mixture δ<sub>D</sub></span><span class="v">${fmt(h.d, 1)}${u}</span>
+          <span class="k">Mixture δ<sub>P</sub></span><span class="v">${fmt(h.p, 1)}${u}</span>
+          <span class="k">Mixture δ<sub>H</sub></span><span class="v">${fmt(h.h, 1)}${u}</span>
+          ${comps.map((c, i) => `<span class="k">φ ${esc(c.smiles)}</span><span class="v">${fmt(100 * mix.value.phi[i], 1)} vol %</span>`).join('')}
+        </div>`;
+    }
+  }
+  el.innerHTML = `
+    <div class="muted small">${comps.length} separate molecules: a mixture. Each component is estimated on its own; enter the composition to combine them.</div>
+    <div class="field"><label for="mix-basis">Composition as</label>
+      <select id="mix-basis">
+        <option value="mole" ${mixBasis === 'mole' ? 'selected' : ''}>mole parts</option>
+        <option value="mass" ${mixBasis === 'mass' ? 'selected' : ''}>mass parts</option>
+        <option value="volume" ${mixBasis === 'volume' ? 'selected' : ''}>volume parts</option>
+      </select></div>
+    ${comps.map((c, i) => `
+      <div class="mix-row">
+        <code title="${esc(c.smiles)}">${esc(c.smiles)}</code>
+        <span class="muted small">${c.r.ok && c.r.value.hansen ? `${fmt(c.r.value.hansen.d, 1)} / ${fmt(c.r.value.hansen.p, 1)} / ${fmt(c.r.value.hansen.h, 1)}` : 'not covered'}</span>
+        <input data-mix="${i}" value="${esc(amount(c.smiles))}" inputmode="decimal" aria-label="Amount of ${esc(c.smiles)}" />
+      </div>`).join('')}
+    ${result}
+    <div class="muted method">Volume-fraction average δ = Σ φᵢδᵢ, assuming ideal mixing; mole and mass parts are converted with each component’s Fedors molar volume${comps.some((c) => c.isPolymer) ? ' (per repeat unit for polymers)' : ''} and molar mass. Salts and ions are not covered.</div>
+    ${ANALYZER_BTN}`;
+  wireAnalyzerButton(el);
+  el.querySelector<HTMLSelectElement>('#mix-basis')!.addEventListener('change', (e) => {
+    mixBasis = (e.target as HTMLSelectElement).value as CompositionBasis;
+    updateInspector();
+  });
+  for (const inp of el.querySelectorAll<HTMLInputElement>('input[data-mix]')) {
+    inp.addEventListener('change', () => {
+      const v = inp.value.trim().replace(',', '.');
+      if (!(parseFloat(v) >= 0)) { toast('Enter an amount of zero or more.'); inp.value = amount(comps[+inp.dataset.mix!].smiles); return; }
+      mixAmounts.set(comps[+inp.dataset.mix!].smiles, v);
+      updateInspector();
+    });
+  }
+}
+setNotifier(toast);
 // Collapsed by default so the polymer tools stay in view.
 $('solubility-toggle').addEventListener('click', () => {
   const btn = $('solubility-toggle');
@@ -571,7 +666,7 @@ $('solubility-toggle').addEventListener('click', () => {
   btn.setAttribute('aria-expanded', String(open));
   $('solubility').hidden = !open;
 });
-explainOnHover($('solubility'), 'Solubility parameters', 'Estimated from functional-group contributions. Similar δ values (or a small Hansen distance Ra) suggest the solvent dissolves or swells the material.');
+explainOnHover($('solubility'), 'Solubility parameters', 'Layer 1: estimated from functional-group contributions for one structure (or a mixture from its composition). The Solvent analyzer compares it with solvents (Ra) and fits a sphere R₀ from your solvent tests to give RED.');
 
 let inspectorTimer = 0;
 let saveTimer = 0;

@@ -46,7 +46,13 @@ slide deck or lab notebook.
 - **Solubility parameters:** Hansen δD / δP / δH (Hoftyzer–Van Krevelen) and Hildebrand δ
   (Fedors) by group contribution, for molecules and polymer repeat units, with the groups
   counted shown and an optional density to use V = M/ρ. Structures outside the group tables
-  are refused rather than guessed.
+  are refused rather than guessed. A drawing of several molecules is treated as a mixture:
+  each component is estimated on its own and combined by volume fraction from the mole, mass
+  or volume composition you enter.
+- **Solvent analyzer:** ranks 43 solvents (Hansen 2007 values) and your own solvents or blends
+  by Hansen distance Ra from the drawn structure, a mixture or literature values. Mark the
+  solvents you have tested as good or poor and it fits the solubility sphere centre and R₀
+  (Hansen's SPHERE method), then gives RED for every solvent.
 - **Molecular modelling:** copy a 3D MOL block (explicit H, MMFF94s+ minimised) to paste into
   Avogadro, Chem3D and similar programs, or export 3D SDF, MOL2 (SYBYL types), PDB and XYZ.
 - **ChemDraw files:** open and save `.cdxml`. Abbreviations such as OMe, Boc or OTBS are expanded,
@@ -94,6 +100,7 @@ npm run app:dev      # desktop app with hot reload
 npm run app:build    # builds MolCanvas.app and a .dmg in src-tauri/target/release/bundle
 npm run check:presets  # validates every preset structure
 npm run check:solubility  # group-contribution sums against hand-worked values
+npm run check:hansen      # Hansen distance, mixtures and sphere fitting
 npm run check:export   # MOL V2000/V3000 round trips and 3D SDF/MOL2/PDB/XYZ output
 npm run check:cdxml    # ChemDraw CDXML round trips and a ChemDraw-written test file
 npm run check:radicals # radicals, carbenes and ions: valence, info bar, every export format
@@ -109,7 +116,10 @@ npm run check:radicals # radicals, carbenes and ions: valence, info bar, every e
 | `src/editor.ts` | Tools, hit testing, selection, undo/redo, clipboard, pan/zoom |
 | `src/chem.ts` | Chemistry via [OpenChemLib](https://github.com/cheminfo/openchemlib-js): valence, rings, SMILES/MOL, formula, properties |
 | `src/cdxml.ts` | ChemDraw CDXML reader and writer |
-| `src/solubility.ts` | Hansen and Hildebrand solubility parameters by group contribution |
+| `src/solubility.ts` | Layer 1: Hansen and Hildebrand solubility parameters of one structure by group contribution |
+| `src/hansen.ts` | Layer 2: Hansen distance, solvent table, solvent comparison and mixture parameters |
+| `src/sphere.ts` | Layer 3: fits a solubility sphere (centre, R₀) to good/poor solvent tests; RED |
+| `src/solvent-ui.ts` | The Solvent analyzer dialog |
 | `src/modeling.ts` | 3D conformers (OpenChemLib + MMFF94s+) and SDF/MOL2/PDB/XYZ writers |
 | `src/presets.ts` | The preset library (SMILES, laid out at runtime) |
 | `src-tauri/` | The [Tauri](https://tauri.app) desktop shell (small native app using the system WebKit) |
