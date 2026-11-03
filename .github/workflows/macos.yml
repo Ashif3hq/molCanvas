@@ -32,6 +32,7 @@ jobs:
       - run: npm ci
       - run: npm run check:presets
       - run: npm run check:solubility
+      - run: npm run check:hansen
       - run: npm run check:export
       - run: npm run check:cdxml
       - run: npm run check:radicals
