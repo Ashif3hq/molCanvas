@@ -1,0 +1,73 @@
+name: Bug report
+description: Something doesn't work, or MolCanvas gives a wrong chemistry result.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Please search the [existing issues](https://github.com/Ashif3hq/molCanvas/issues) first.
+        **Security problems must not be reported here.** Follow [SECURITY.md](https://github.com/Ashif3hq/molCanvas/blob/main/SECURITY.md) instead.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Type of problem
+      options:
+        - The app or a tool doesn't work as expected
+        - Wrong chemistry (structure, valence, formula, mass, name, solubility…)
+        - Import or export (SMILES, MOL/SDF, CDXML, 3D, images)
+        - Display or layout
+        - Crash or freeze
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: |
+        1. Drew …
+        2. Clicked …
+        Expected: …
+        Got: …
+    validations:
+      required: true
+  - type: textarea
+    id: correct
+    attributes:
+      label: Correct result and source (chemistry problems)
+      description: For a wrong chemistry result, give the correct value and where it comes from (textbook, paper, PubChem entry or another program).
+  - type: textarea
+    id: structure
+    attributes:
+      label: Structure or file
+      description: The structure as SMILES, or attach the `.mol`, `.sdf` or `.cdxml` file. Screenshots help for visual problems.
+  - type: input
+    id: version
+    attributes:
+      label: MolCanvas version
+      placeholder: e.g. 0.4.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Where did it happen?
+      options:
+        - Mac app
+        - Web version
+        - Both
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: macOS or browser version
+      placeholder: e.g. macOS 26.1, or Safari 26 / Chrome 142
+  - type: checkboxes
+    id: conduct
+    attributes:
+      label: Code of Conduct
+      options:
+        - label: I agree to follow this project's [Code of Conduct](https://github.com/Ashif3hq/molCanvas/blob/main/CODE_OF_CONDUCT.md).
+          required: true

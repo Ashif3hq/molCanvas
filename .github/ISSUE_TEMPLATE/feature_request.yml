@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest a new feature or an improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the [roadmap](https://github.com/Ashif3hq/molCanvas#roadmap) and existing issues first; your idea may already be planned.
+        Want to build it yourself? Read [CONTRIBUTING.md](https://github.com/Ashif3hq/molCanvas/blob/main/CONTRIBUTING.md) and wait for a go-ahead here before writing code.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: What are you trying to draw, calculate or export, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like MolCanvas to do?
+    validations:
+      required: true
+  - type: textarea
+    id: who
+    attributes:
+      label: Who would use it?
+      description: For example organic chemists, polymer chemists, students, teachers.
+  - type: textarea
+    id: references
+    attributes:
+      label: Chemistry references or examples
+      description: Papers, textbook pages, or how other programs handle it. Screenshots are welcome.
+  - type: checkboxes
+    id: conduct
+    attributes:
+      label: Code of Conduct
+      options:
+        - label: I agree to follow this project's [Code of Conduct](https://github.com/Ashif3hq/molCanvas/blob/main/CODE_OF_CONDUCT.md).
+          required: true
