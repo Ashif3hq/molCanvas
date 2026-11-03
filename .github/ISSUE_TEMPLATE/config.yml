@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Ashif3hq/molCanvas/security/advisories/new
+    about: Please report security problems privately here, not in a public issue. See SECURITY.md.
+  - name: Try the web version
+    url: https://ashif3hq.github.io/molCanvas/
+    about: Check whether the problem also happens in the latest web version.
