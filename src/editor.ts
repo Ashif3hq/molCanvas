@@ -57,6 +57,8 @@ export class Editor {
   sel = new Set<number>();
   tool: Tool = { kind: 'bond', order: 1, stereo: 'none' };
   hover: Hit = null;
+  /** Atom highlights set from outside the canvas (NMR peak hover). */
+  marks: Map<number, string> | null = null;
   zoom = 1;
   tx = 0;
   ty = 0;
@@ -324,6 +326,7 @@ export class Editor {
       analysis: this.analysis(),
       showErrors: this.showErrors,
       showLonePairs: this.showLonePairs,
+      marks: this.marks,
     };
     let html = renderDoc(this.doc, opts);
     if (this.ghost) {

@@ -23,6 +23,8 @@ export interface RenderOpts {
   analysis?: Analysis;
   showErrors?: boolean;
   showLonePairs?: boolean;
+  /** Atoms to ring in a colour, e.g. the atoms behind a hovered NMR peak. */
+  marks?: Map<number, string> | null;
 }
 
 export const FONT = 16;
@@ -454,6 +456,10 @@ function highlights(ctx: Ctx): string {
   for (const a of ctx.doc.atoms) {
     if (sel.has(a.id)) out += `<circle cx="${f(a.x)}" cy="${f(a.y)}" r="9" fill="${theme.select}" fill-opacity="0.3"/>`;
     if (hover === a.id) out += `<circle cx="${f(a.x)}" cy="${f(a.y)}" r="10" fill="${theme.hover}" fill-opacity="0.35"/>`;
+  }
+  for (const [id, color] of ctx.opts.marks ?? []) {
+    const a = ctx.byId.get(id);
+    if (a) out += `<circle cx="${f(a.x)}" cy="${f(a.y)}" r="13" fill="${color}" fill-opacity="0.28" stroke="${color}" stroke-width="1.5"/>`;
   }
   for (const ar of ctx.doc.arrows) {
     if (sel.has(ar.id) || hover === ar.id) out += line(ar.x1, ar.y1, ar.x2, ar.y2, sel.has(ar.id) ? theme.select : theme.hover, 12, ' stroke-opacity="0.25"');
