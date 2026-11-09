@@ -465,3 +465,57 @@ dialog.analyzer::backdrop { background: rgba(0, 0, 0, 0.35); }
 .an-result { margin-top: 10px; }
 .an-warn { color: var(--danger); margin: 6px 0; padding-left: 18px; }
 p.an-warn { padding-left: 0; }
+
+/* ---------- NMR: inspector panel and spectrum dialog ---------- */
+#nmr-section h3 { margin-bottom: 0; }
+#nmr { margin-top: 8px; }
+.nmr-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+.nmr-controls select { height: 24px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-2); padding: 0 4px; font-size: 12px; }
+.seg { display: inline-flex; background: var(--panel-2); border-radius: 7px; padding: 2px; gap: 2px; }
+.seg button { all: unset; cursor: pointer; padding: 2px 10px; border-radius: 5px; font-size: 12px; color: var(--muted); }
+.seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); }
+.seg button:focus-visible { outline: 2px solid var(--accent); }
+.nmr-plot svg, .nmr-plot-wrap svg { display: block; width: 100%; height: auto; overflow: visible; }
+.nmr-pk { cursor: default; }
+.nmr-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 6px; }
+.nmr-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 3px; }
+.nmr-table td { padding: 3px; border-top: 1px solid var(--border); vertical-align: top; }
+.nmr-table tr.hl td, .nmr-table tbody tr:hover td { background: var(--accent-soft); }
+.pk-dot { display: inline-block; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; color: #fff; font-size: 9.5px; font-weight: 600; text-align: center; line-height: 15px; }
+.nmr-lit { margin-top: 6px; line-height: 1.4; }
+.lit-dot { display: inline-block; width: 10px; height: 0; border-top: 2px dashed #30b158; margin-right: 5px; vertical-align: middle; }
+dialog.nmr-dialog { width: min(1180px, calc(100vw - 32px)); height: calc(100vh - 48px); }
+.nmr-sub { font-weight: 400; font-size: 13px; margin-left: 6px; }
+.nmr-head-actions { display: flex; gap: 6px; }
+.nmr-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; padding: 12px 16px 16px; overflow: hidden; flex: 1; min-height: 0; }
+.nmr-main { overflow-y: auto; min-width: 0; padding-right: 4px; }
+.nmr-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.nmr-toolbar .nmr-controls { margin: 0; }
+.chip { all: unset; cursor: pointer; padding: 3px 10px; border-radius: 999px; background: var(--panel-2); font-size: 12px; color: var(--muted); }
+.chip.on { background: var(--accent-soft); color: var(--accent); }
+.chip:focus-visible { outline: 2px solid var(--accent); }
+.nmr-plot-wrap { position: relative; margin: 6px 0 12px; user-select: none; }
+.nmr-plot-wrap svg { cursor: crosshair; }
+.nmr-plot-title { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.nmr-zoombox { position: absolute; background: var(--accent-soft); border: 1px solid var(--accent); pointer-events: none; }
+.nmr-tables { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.nmr-structure svg { width: 100%; height: auto; max-height: 260px; }
+.nmr-side { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--border); padding-left: 16px; }
+.nmr-side h3 { margin: 0 0 6px; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; }
+.nmr-search { height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); padding: 0 10px; }
+.nmr-cats { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+.nmr-refs { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 5px; padding-right: 2px; }
+.ref-item { all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 1px; padding: 7px 9px; border-radius: 8px; background: var(--panel-2); font-size: 12px; border: 1px solid transparent; }
+.ref-item:hover { border-color: var(--border); }
+.ref-item.on { border-color: #bf5af2; background: rgba(191, 90, 242, 0.1); }
+.ref-item:focus-visible { outline: 2px solid var(--accent); }
+.ref-name { font-weight: 600; }
+.ref-vals { font-variant-numeric: tabular-nums; }
+.ref-vals b { font-weight: 600; color: var(--muted); }
+.ref-note { font-size: 11.5px; }
+.ref-badge { font-weight: 500; font-size: 10.5px; color: #1e9e3a; background: rgba(48, 177, 88, 0.14); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
+@media (max-width: 900px) {
+  .nmr-body { grid-template-columns: 1fr; overflow-y: auto; }
+  .nmr-side { border-left: 0; padding-left: 0; }
+  .nmr-tables { grid-template-columns: 1fr; }
+}

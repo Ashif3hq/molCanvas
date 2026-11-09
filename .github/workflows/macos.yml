@@ -38,6 +38,7 @@ jobs:
       - run: npm run check:cdxml
       - run: npm run check:radicals
       - run: npm run check:brackets
+      - run: npm run check:nmr
 
       - name: Build app and DMG
         id: tauri

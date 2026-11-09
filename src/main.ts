@@ -13,6 +13,7 @@ import { openAnalyzer, setDrawnTarget, setNotifier } from './solvent-ui';
 import { build3D, Model3D, mol2, molfile3D, pdb, sdf3D, xyz } from './modeling';
 import { loadChemResources } from './resources';
 import { fromCdxml, toCdxml } from './cdxml';
+import { initNmr, updateNmr } from './nmr-ui';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const mod = isMac ? '⌘' : 'Ctrl+';
@@ -466,6 +467,7 @@ function updateInspector() {
   updateSolubility(doc, pr?.mw);
   let smiles = '';
   try { smiles = doc.atoms.length ? toSmiles(doc) : ''; } catch { smiles = ''; }
+  updateNmr(doc, pr?.isPolymer ? `repeat unit ${pr.formula}` : smiles);
   $('smiles').textContent = smiles || '—';
   if (smiles !== lastSmiles) { $('name-out').textContent = ''; lastSmiles = smiles; }
 }
@@ -666,6 +668,12 @@ $('solubility-toggle').addEventListener('click', () => {
   btn.setAttribute('aria-expanded', String(open));
   $('solubility').hidden = !open;
 });
+initNmr({
+  setMarks: (marks) => { editor.marks = marks; editor.render(); },
+  isDark,
+  notify: toast,
+});
+explainOnHover($('nmr'), 'Predicted NMR', 'Estimated ¹H and ¹³C shifts from additive increments. Hover a peak or a table row to ring its atoms on the canvas. Open the spectrum for zoom, export and reference peaks (solvents, impurities, functional groups, polymers).');
 explainOnHover($('solubility'), 'Solubility parameters', 'Layer 1: estimated from functional-group contributions for one structure (or a mixture from its composition). The Solvent analyzer compares it with solvents (Ra) and fits a sphere R₀ from your solvent tests to give RED.');
 
 let inspectorTimer = 0;
