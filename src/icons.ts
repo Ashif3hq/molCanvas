@@ -22,6 +22,7 @@ const ring = (n: number, aromatic = false) => {
 
 export const ICONS: Record<string, string> = {
   select: svg('<path d="M5 3l13 8-6 1.5L9 19z" fill="currentColor" fill-opacity="0.15"/>'),
+  lasso: svg('<path d="M12 4c4.7 0 8 2.3 8 5.2s-3.3 5.3-8 5.3-8-2.4-8-5.3S7.3 4 12 4z" stroke-dasharray="2.6 2.2"/><path d="M6.2 13c-.9 1.4-.6 3 .9 3.6 1.3.5 1.6 1.8.9 3.4"/>'),
   erase: svg('<path d="M15.5 4.5l4 4L10 18H6l-2-2z"/><path d="M11 9l4 4"/><path d="M10 20h10"/>'),
   single: svg('<line x1="5" y1="17" x2="19" y2="7"/>'),
   double: svg('<line x1="4.5" y1="15" x2="17.5" y2="5.5"/><line x1="6.5" y1="18.5" x2="19.5" y2="9"/>'),

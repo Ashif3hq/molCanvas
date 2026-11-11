@@ -20,6 +20,8 @@ slide deck or lab notebook.
   membered rings and benzene with automatic ring fusion; any element from the periodic table;
   charges; radicals; reaction, equilibrium, retrosynthesis and resonance arrows; text with automatic
   subscripts (`CH2Cl2` → CH₂Cl₂).
+- **Box and lasso selection:** drag a box with the Select tool (`V`), or draw a freehand loop
+  with the Lasso tool (`L`) to pick out one substituent or ring in a crowded scheme.
 - **Ions and radicals:** cations and anions with formal charges, radicals (•), triplet and
   singlet carbenes/nitrenes, radical cations and anions. Each radical electron takes the place of
   a bond (CH₄ → CH₃•), the info bar names the species (tertiary carbocation, oxyl radical,
