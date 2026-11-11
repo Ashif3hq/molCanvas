@@ -353,13 +353,35 @@ function structureMap(): string {
   const byAtom = new Map<number, { t: string; c: string }[]>();
   r.value.peaks.forEach((p, k) => { for (const id of p.atoms) byAtom.set(id, [...(byAtom.get(id) ?? []), { t: p.label, c: PEAK_COLORS[k % PEAK_COLORS.length] }]); });
   let svg = standaloneSvg(doc, { theme: host.isDark() ? DARK : LIGHT, colorAtoms: true, pad: 22 });
+  // Put each atom's peak letters just outside the structure: opposite the mean direction of its
+  // bonds (so they never sit on a bond or inside a ring), centred on that point.
+  const pos = new Map(doc.atoms.map((a) => [a.id, a]));
+  const halo = host.isDark() ? '#1f1f22' : '#fff';
   let tags = '';
   for (const a of doc.atoms) {
     const ls = byAtom.get(a.id);
     if (!ls) continue;
-    ls.forEach((l, i) => {
-      tags += `<text x="${a.x + 10 + i * 12}" y="${a.y - 9}" font-size="13" font-weight="700" fill="${l.c}" stroke="${host.isDark() ? '#1f1f22' : '#fff'}" stroke-width="3" paint-order="stroke" font-family="-apple-system, sans-serif">${l.t}</text>`;
-    });
+    let dx = 0, dy = 0;
+    for (const b of doc.bonds) {
+      const o = b.a === a.id ? pos.get(b.b) : b.b === a.id ? pos.get(b.a) : undefined;
+      if (!o) continue;
+      const len = Math.hypot(o.x - a.x, o.y - a.y) || 1;
+      dx += (o.x - a.x) / len; dy += (o.y - a.y) / len;
+    }
+    let ux = -dx, uy = -dy;
+    const m = Math.hypot(ux, uy);
+    if (m < 0.3) {
+      // Linear or isolated atom: go perpendicular to the bonds (or straight up).
+      const n = Math.hypot(dx, dy);
+      if (n > 0.01) { ux = -dy / n; uy = dx / n; } else { ux = 0; uy = -1; }
+      if (uy > 0) { ux = -ux; uy = -uy; }
+    } else { ux /= m; uy /= m; }
+    // A heteroatom's own label (OH, NH2, HO…) runs sideways, so put its letters above or below it.
+    if (a.el !== 'C') { uy = uy > 0 ? 1 : -1; ux = 0; }
+    const text = ls.map((l) => l.t).join(',');
+    const r = (a.el === 'C' ? 12 : 16) + Math.abs(ux) * Math.max(0, text.length - 1) * 3.5;
+    const spans = ls.map((l, i) => `${i ? `<tspan fill="${halo === '#fff' ? '#888' : '#aaa'}">,</tspan>` : ''}<tspan fill="${l.c}">${l.t}</tspan>`).join('');
+    tags += `<text x="${(a.x + ux * r).toFixed(1)}" y="${(a.y + uy * r).toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="13" font-weight="700" stroke="${halo}" stroke-width="3" paint-order="stroke" font-family="-apple-system, sans-serif">${spans}</text>`;
   }
   svg = svg.replace(/<\/svg>$/, `${tags}</svg>`);
   return svg;

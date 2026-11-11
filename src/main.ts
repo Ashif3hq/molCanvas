@@ -181,6 +181,7 @@ applyTheme();
 interface ToolDef { key: string; icon?: string; label?: string; title: string; tool: Tool; cls?: string; }
 const TOOL_DEFS: (ToolDef | 'sep')[] = [
   { key: 'select', icon: 'select', title: 'Select & move (V)', tool: { kind: 'select' } },
+  { key: 'lasso', icon: 'lasso', title: 'Lasso select (L)', tool: { kind: 'lasso' } },
   { key: 'erase', icon: 'erase', title: 'Eraser (E)', tool: { kind: 'erase' } },
   'sep',
   { key: 'b1', icon: 'single', title: 'Single bond (1 / B). Click a bond to cycle single → double → triple', tool: { kind: 'bond', order: 1, stereo: 'none' } },
@@ -217,6 +218,7 @@ const TOOL_DEFS: (ToolDef | 'sep')[] = [
 
 const TOOL_EXPLAIN: Record<string, string> = {
   select: 'Click to select, drag to box-select, drag a selection to move it, double-click to select a whole molecule. Shortcut V.',
+  lasso: 'Draw a freehand loop around the atoms, bonds, arrows or text you want, for shapes a box can\'t catch (one substituent, a ring inside a crowded scheme). Shift adds to the selection; drag a selection to move it. Shortcut L.',
   erase: 'Click or drag over atoms, bonds, arrows and text to delete them. Shortcut E.',
   b1: 'Single (σ) bond. Click an atom to grow a bond, drag to aim it, click an existing bond to cycle single → double → triple.',
   b2: 'Double bond: one σ and one π bond, as in alkenes (C=C) and carbonyls (C=O).',

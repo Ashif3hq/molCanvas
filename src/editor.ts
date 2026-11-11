@@ -16,6 +16,7 @@ import { Explanation, explainAtom, explainBond, explainProblem, valenceProblems 
 
 export type Tool =
   | { kind: 'select' }
+  | { kind: 'lasso' }
   | { kind: 'erase' }
   | { kind: 'bond'; order: 1 | 2 | 3; stereo: BondStereo }
   | { kind: 'chain' }
@@ -41,9 +42,11 @@ interface Drag {
   startScreen: Point;
   hit: Hit;
   moved: boolean;
-  mode: 'move' | 'rubber' | 'draw' | 'pan' | 'erase' | 'arrow' | 'none';
+  mode: 'move' | 'rubber' | 'lasso' | 'draw' | 'pan' | 'erase' | 'arrow' | 'none';
   original?: Doc;
   moveIds?: Set<number>;
+  /** Lasso tool: the freehand outline traced so far (world coordinates). */
+  path?: Point[];
   shift: boolean;
 }
 
@@ -51,6 +54,16 @@ const HOTKEY_ELEMENTS: Record<string, string> = {
   c: 'C', n: 'N', o: 'O', s: 'S', p: 'P', f: 'F', h: 'H', i: 'I', l: 'Cl', b: 'Br', k: 'K', '*': '*',
   C: 'C', N: 'N', O: 'O', S: 'S', P: 'P', F: 'F', H: 'H', I: 'I', L: 'Cl', B: 'B',
 };
+
+/** Even-odd ray casting: is q inside the closed polygon `poly`? */
+export function pointInPolygon(q: Point, poly: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > q.y) !== (b.y > q.y) && q.x < ((b.x - a.x) * (q.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
 
 export class Editor {
   doc: Doc = emptyDoc();
@@ -255,6 +268,7 @@ export class Editor {
     const t = this.tool;
     switch (t.kind) {
       case 'select': return 'Select: drag to box-select, drag a selection to move it, double-click to select a whole molecule.';
+      case 'lasso': return 'Lasso: draw a loop around atoms, bonds, arrows or text to select them (Shift adds to the selection). Drag a selection to move it.';
       case 'erase': return 'Eraser: click or drag over atoms, bonds, arrows and text to delete them.';
       case 'bond': return 'Bond: click an atom to grow a bond, drag to set direction, click a bond to change it. Hover + letter key sets an element.';
       case 'chain': return 'Chain: drag from an atom or empty space to draw a zig-zag carbon chain.';
@@ -336,6 +350,10 @@ export class Editor {
     if (this.drag?.mode === 'rubber' && this.drag.moved) {
       const p = this.pointer, s = this.drag.start;
       html += `<rect x="${Math.min(p.x, s.x)}" y="${Math.min(p.y, s.y)}" width="${Math.abs(p.x - s.x)}" height="${Math.abs(p.y - s.y)}" fill="${this.theme.select}" fill-opacity="0.08" stroke="${this.theme.select}" stroke-width="${1 / this.zoom}" stroke-dasharray="${4 / this.zoom} ${3 / this.zoom}"/>`;
+    }
+    if (this.drag?.mode === 'lasso' && this.drag.moved && this.drag.path && this.drag.path.length > 1) {
+      const pts = this.drag.path.map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(' ');
+      html += `<polygon points="${pts}" fill="${this.theme.select}" fill-opacity="0.08" stroke="${this.theme.select}" stroke-width="${1 / this.zoom}" stroke-dasharray="${4 / this.zoom} ${3 / this.zoom}" stroke-linejoin="round" pointer-events="none"/>`;
     }
     const pb = this.tool.kind === 'bracket' && this.pendingBracketBond !== null ? this.doc.bonds.find((b) => b.id === this.pendingBracketBond) : undefined;
     if (pb) {
@@ -431,7 +449,7 @@ export class Editor {
     this.drag = drag;
     if (e.button === 1 || this.spaceDown) { drag.mode = 'pan'; return; }
     const t = this.tool;
-    if (t.kind === 'select') {
+    if (t.kind === 'select' || t.kind === 'lasso') {
       if (hit) {
         if (!this.sel.has(hit.id)) {
           if (!e.shiftKey) this.sel.clear();
@@ -444,7 +462,8 @@ export class Editor {
         drag.moveIds = this.movableAtoms();
       } else {
         if (!e.shiftKey) this.sel.clear();
-        drag.mode = 'rubber';
+        drag.mode = t.kind === 'lasso' ? 'lasso' : 'rubber';
+        if (t.kind === 'lasso') drag.path = [p];
       }
       this.render();
     } else if (t.kind === 'erase') {
@@ -486,6 +505,13 @@ export class Editor {
         return;
       }
       if (drag.mode === 'rubber') { this.render(); return; }
+      if (drag.mode === 'lasso' && drag.path) {
+        // Keep the outline light: only add a point once the pointer has travelled ~2 screen px.
+        const last = drag.path[drag.path.length - 1];
+        if (dist(last, p) * this.zoom >= 2) drag.path.push(p);
+        this.render();
+        return;
+      }
       if (drag.mode === 'erase') { this.eraseAt(p, false); return; }
       if (drag.mode === 'arrow') {
         const ar = this.arrowFromDrag(drag.start, p);
@@ -546,6 +572,12 @@ export class Editor {
       else this.click(p, drag.hit, e);
       return;
     }
+    if (drag.mode === 'lasso') {
+      if (drag.moved && drag.path) { drag.path.push(p); this.lassoSelect(drag.path); }
+      this.render();
+      this.onChange();
+      return;
+    }
     if (drag.mode === 'rubber') {
       if (drag.moved) this.rubberSelect(drag.start, p);
       this.render();
@@ -584,7 +616,7 @@ export class Editor {
   private doubleClick(e: MouseEvent) {
     const p = this.toWorld(e.clientX, e.clientY);
     const hit = this.hitTest(p);
-    if (this.tool.kind === 'select' && hit && (hit.type === 'atom' || hit.type === 'bond')) {
+    if ((this.tool.kind === 'select' || this.tool.kind === 'lasso') && hit && (hit.type === 'atom' || hit.type === 'bond')) {
       const atomId = hit.type === 'atom' ? hit.id : this.doc.bonds.find((b) => b.id === hit.id)!.a;
       const comp = fragments(this.doc).find((c) => c.includes(atomId)) ?? [];
       for (const id of comp) this.sel.add(id);
@@ -663,7 +695,8 @@ export class Editor {
         else if (!hit) this.newText(p);
         return;
       }
-      case 'select': {
+      case 'select':
+      case 'lasso': {
         if (!hit && !e.shiftKey) { this.sel.clear(); this.render(); this.onChange(); }
         return;
       }
@@ -774,6 +807,20 @@ export class Editor {
   private rubberSelect(a: Point, b: Point) {
     const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
     const inside = (p: Point) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
+    for (const at of this.doc.atoms) if (inside(at)) this.sel.add(at.id);
+    for (const bd of this.doc.bonds) if (this.sel.has(bd.a) && this.sel.has(bd.b)) this.sel.add(bd.id);
+    for (const ar of this.doc.arrows) if (inside({ x: ar.x1, y: ar.y1 }) && inside({ x: ar.x2, y: ar.y2 })) this.sel.add(ar.id);
+    for (const t of this.doc.texts) if (inside(t)) this.sel.add(t.id);
+  }
+
+  /**
+   * Lasso tool: select everything inside the freehand loop (closed back to its start).
+   * Same rules as the box: atoms whose centre is inside, bonds whose both atoms are,
+   * arrows with both ends inside, and text whose anchor is inside.
+   */
+  private lassoSelect(path: Point[]) {
+    if (path.length < 3) return;
+    const inside = (q: Point) => pointInPolygon(q, path);
     for (const at of this.doc.atoms) if (inside(at)) this.sel.add(at.id);
     for (const bd of this.doc.bonds) if (this.sel.has(bd.a) && this.sel.has(bd.b)) this.sel.add(bd.id);
     for (const ar of this.doc.arrows) if (inside({ x: ar.x1, y: ar.y1 }) && inside({ x: ar.x2, y: ar.y2 })) this.sel.add(ar.id);
@@ -1142,7 +1189,7 @@ export class Editor {
     }
     if (h && (h.type === 'atom' ? HOTKEY_ELEMENTS[e.key] : ['1', '2', '3'].includes(e.key))) return;
     const shortcuts: Record<string, Tool> = {
-      v: { kind: 'select' }, e: { kind: 'erase' }, b: { kind: 'bond', order: 1, stereo: 'none' }, g: { kind: 'chain' },
+      v: { kind: 'select' }, l: { kind: 'lasso' }, e: { kind: 'erase' }, b: { kind: 'bond', order: 1, stereo: 'none' }, g: { kind: 'chain' },
       r: { kind: 'ring', size: 6, aromatic: true }, t: { kind: 'text' }, a: { kind: 'arrow', arrow: 'forward' }, '[': { kind: 'bracket' },
       '1': { kind: 'bond', order: 1, stereo: 'none' }, '2': { kind: 'bond', order: 2, stereo: 'none' }, '3': { kind: 'bond', order: 3, stereo: 'none' },
     };
