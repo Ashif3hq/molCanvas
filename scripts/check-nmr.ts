@@ -81,6 +81,37 @@ for (const smi of REFUSED) {
   if (et !== 'q2,t3') { bad++; console.error('FAIL ethyl multiplets', et); }
 }
 
+// Diastereotopic protons: CH₂ next to a stereocentre or in a rigid ring splits into two 1H signals that
+// couple to each other; CH₂ in achiral molecules (ethanol, diethyl ether, cyclohexane) stays one signal.
+{
+  const diaCH2 = (smi: string) => {
+    const r = predictNmr(fromSmiles(smi), '1H');
+    return r.ok ? r.value.peaks.filter((p) => p.assignment.includes('diastereotopic (')) : [];
+  };
+  for (const smi of ['CCO', 'CCOCC', 'C1CCCCC1', 'CCOC(C)=O', 'CC(C)CO']) {
+    if (diaCH2(smi).length) { bad++; console.error('FAIL CH₂ should stay equivalent', smi); }
+  }
+  // 2-butanol C3, deoxypodophyllotoxin (no wedges drawn, and with stereo): H-4, H-11, OCH₂O.
+  const expect: [string, number][] = [
+    ['CC(O)CC', 2], ['COC(=O)C(N)Cc1ccccc1', 2],
+    ['COC1=CC(=CC(=C1OC)OC)C2C3C(CC4=CC5=C(C=C24)OCO5)COC3=O', 6],
+    ['COC1=CC(=CC(=C1OC)OC)[C@H]2[C@@H]3[C@H](CC4=CC5=C(C=C24)OCO5)COC3=O', 6],
+  ];
+  for (const [smi, n] of expect) {
+    const ps = diaCH2(smi);
+    if (ps.length !== n || ps.some((p) => p.count !== 1 || !p.couplings.length)) { bad++; console.error('FAIL diastereotopic CH₂ not split', smi, ps.map((p) => `${p.shift} ${p.mult}`)); }
+  }
+  // Deoxypodophyllotoxin lactone OCH₂ (H-11) 4.46 / 3.92 and benzylic H-4 3.08 / 2.75 (CDCl₃): each pair at least 0.2 ppm apart.
+  const dpt = diaCH2(expect[2][0]);
+  for (const key of ['CH₂–OC(=O)', 'Ar–CH₂']) {
+    const pair = dpt.filter((p) => p.assignment.startsWith(key)).map((p) => p.shift);
+    if (pair.length !== 2 || Math.abs(pair[0] - pair[1]) < 0.2) { bad++; console.error('FAIL deoxypodophyllotoxin', key, pair); }
+  }
+  // Valine isopropyl: two methyl doublets.
+  const val = predictNmr(fromSmiles('CC(C)C(N)C(=O)O'), '1H');
+  if (!val.ok || val.value.peaks.filter((p) => p.assignment === 'CH₃, diastereotopic').length !== 2) { bad++; console.error('FAIL valine methyls should be diastereotopic'); }
+}
+
 // Every library preset must either predict without throwing, with finite shifts in a sane window, or be refused.
 let covered = 0;
 for (const pr of PRESETS) {

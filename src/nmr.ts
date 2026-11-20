@@ -440,6 +440,8 @@ interface HSite {
   rough?: boolean;
   /** Partners: [site index, J Hz, number of H]. Filled after all sites exist. */
   side?: number; // for =CH₂: which side of the C=C the H is on
+  /** One of the two diastereotopic H of a CH₂: geminal ²J to its partner, Hz. */
+  gem?: number;
 }
 
 const round = (v: number, d = 2) => Math.round(v * 10 ** d) / 10 ** d;
@@ -545,6 +547,7 @@ function predictH(g: Graph, solvent: NmrSolvent): NmrResult {
   const exchanged = solvent === 'D2O' || solvent === 'CD3OD';
   let anyRough = false;
 
+  const dia = diastereotopic(g);
   const exch = (atom: number, n: number, key: string) => {
     const t = EXCH[key];
     const v = dmsoLike ? t.dmso : t.cdcl3;
@@ -719,7 +722,27 @@ function predictH(g: Graph, solvent: NmrSolvent): NmrResult {
     if (ringSize === 3) s -= 1.0; else if (ringSize === 4) s += 0.75; else if (ringSize === 5 || ringSize === 6) s += alphas.length ? 0 : 0.25;
     anyRough ||= rough;
     const label = n === 3 ? 'CH₃' : n === 2 ? 'CH₂' : n === 1 ? 'CH' : 'CH₄';
-    sites.push({ atom: c, n, shift: s, what: describeSp3(g, c, label, kinds.map((k) => k.k)), rough });
+    const what = describeSp3(g, c, label, kinds.map((k) => k.k));
+    const me = n === 3 ? dia.me.get(c) : undefined;
+    if (me) {
+      // Diastereotopic methyl pair (menthol isopropyl 0.90 / 0.78): nudge the two apart.
+      const split = me.ring ? (me.d <= 2 ? 0.15 : 0.08) : me.d <= 1 ? 0.1 : me.d === 2 ? 0.04 : 0;
+      if (split) {
+        sites.push({ atom: c, n, shift: s + (me.sign * split) / 2, what: `${what}, diastereotopic`, rough });
+        continue;
+      }
+    }
+    const d = n === 2 ? dia.ch2.get(c) : undefined;
+    const split = d === undefined ? 0 : diaSplit(g, ch, c, d);
+    if (split >= 0.02) {
+      // Diastereotopic CH₂: the two H sit in different environments, so they give two signals that
+      // couple to each other (²J) as well as to their neighbours.
+      const j = gemJ(g, ch, c);
+      sites.push({ atom: c, n: 1, shift: s + split / 2, what: `${what}, diastereotopic (downfield)`, rough, gem: j });
+      sites.push({ atom: c, n: 1, shift: s - split / 2, what: `${what}, diastereotopic (upfield)`, rough, gem: j });
+      continue;
+    }
+    sites.push({ atom: c, n, shift: s, what, rough });
   }
 
   // Couplings between sites on neighbouring atoms (3J), with equivalent sites grouped.
@@ -757,6 +780,9 @@ function predictH(g: Graph, solvent: NmrSolvent): NmrResult {
         out.push({ n: t.n, j });
       }
     }
+    // Geminal partner. Small ²J (O–CH₂–O ≈ 1.5 Hz) is kept: it is what makes these doublets.
+    if (s.gem !== undefined && s.gem < 2.5) return [...groupCouplings(out), { n: 1, j: s.gem }];
+    if (s.gem !== undefined) out.push({ n: 1, j: s.gem });
     return groupCouplings(out);
   };
 
@@ -779,9 +805,121 @@ function predictH(g: Graph, solvent: NmrSolvent): NmrResult {
   peaks.sort((a, b) => b.shift - a.shift);
   peaks.forEach((p, k) => { p.label = letter(k); });
   if (exchanged && sites.some((s) => s.exch)) notes.push(`O–H / N–H protons exchange with ${solvent} and are not shown.`);
+  if (sites.some((s) => s.gem !== undefined)) notes.push('Diastereotopic CH₂ protons (next to a stereocentre or in a ring) are given as two signals with a geminal coupling; the shift difference between them is an estimate.');
+  if (sites.some((s) => s.what.endsWith(', diastereotopic'))) notes.push('Diastereotopic methyl groups (e.g. an isopropyl next to a stereocentre) are given as two signals; the shift difference is an estimate.');
   if (sites.some((s) => s.exch) && !exchanged) notes.push('O–H, N–H and S–H positions depend on concentration, temperature and water; they are drawn broad.');
   if (anyRough) notes.push('Peaks marked ~ are outside the main increment tables and less reliable.');
   return { ok: true, value: { nucleus: '1H', peaks, isPolymer: g.isPolymer, notes } };
+}
+
+/**
+ * sp³ CH₂ carbons whose two H are diastereotopic, mapped to the bond distance to the nearest stereocentre
+ * (Infinity when there is none, e.g. cis/trans ring positions). Each H is swapped in turn for a test atom
+ * and the two results compared with stereo (OpenChemLib diastereotopic IDs): identical or mirror images
+ * mean equivalent protons (ethanol), anything else means diastereotopic (2-butanol C3). Stereocentres
+ * drawn without wedges are given an arbitrary configuration, since the protons are diastereotopic in
+ * every stereoisomer. Polymers are left out: their signals are broad and tacticity-dependent.
+ */
+interface Diastereotopic {
+  /** CH₂ carbon → bond distance to the nearest stereocentre. */
+  ch2: Map<number, number>;
+  /** Methyl carbon of a diastereotopic pair (isopropyl next to a stereocentre, ring gem-dimethyl) → which of the pair, and the distance. */
+  me: Map<number, { sign: 1 | -1; d: number; ring: boolean }>;
+}
+
+function diastereotopic(g: Graph): Diastereotopic {
+  const out: Diastereotopic = { ch2: new Map(), me: new Map() };
+  if (g.isPolymer) return out;
+  try {
+    const m = g.mol.getCompactCopy();
+    const n0 = m.getAllAtoms();
+    for (let i = 0; i < n0; i++) m.setAtomMapNo(i, i + 1, false);
+    m.addImplicitHydrogens();
+    m.addMissingChirality();
+    const ids = m.getDiastereotopicAtomIDs();
+    m.ensureHelperArrays(Molecule.cHelperCIP);
+    const orig = (i: number) => m.getAtomMapNo(i) - 1;
+    const stereo = new Set<number>();
+    const ch2: number[] = [];
+    const mePairs: [number, number, number][] = []; // centre, methyl, methyl (original indices), lower ID first
+    for (let i = 0; i < m.getAllAtoms(); i++) {
+      const o = orig(i);
+      if (o < 0 || m.getAtomicNo(i) === 1) continue;
+      if (m.isAtomStereoCenter(i)) stereo.add(o);
+      const mes: number[] = [];
+      for (let k = 0; k < m.getAllConnAtoms(i); k++) {
+        const a = m.getConnAtom(i, k), oa = orig(a);
+        if (oa >= 0 && m.getAtomicNo(a) === 6 && g.nh[oa] === 3 && g.adj[oa].length === 1) mes.push(a);
+      }
+      if (mes.length === 2 && ids[mes[0]] !== ids[mes[1]]) {
+        const [p, q] = ids[mes[0]] < ids[mes[1]] ? mes : [mes[1], mes[0]];
+        mePairs.push([o, orig(p), orig(q)]);
+      }
+      if (m.getAtomicNo(i) !== 6 || g.nh[o] !== 2 || !g.atoms.includes(o)) continue;
+      const hs: number[] = [];
+      for (let k = 0; k < m.getAllConnAtoms(i); k++) {
+        const a = m.getConnAtom(i, k);
+        if (m.getAtomicNo(a) === 1 && m.getAtomMass(a) !== 2) hs.push(a);
+      }
+      if (hs.length === 2 && ids[hs[0]] !== ids[hs[1]]) ch2.push(o);
+    }
+    const distance = (c: number) => {
+      // Breadth-first distance to the nearest stereocentre other than this atom.
+      const dist = new Map<number, number>([[c, 0]]);
+      const q = [c];
+      let d = Infinity;
+      while (q.length && d === Infinity) {
+        const a = q.shift()!;
+        for (const e of g.adj[a]) {
+          if (dist.has(e.to)) continue;
+          dist.set(e.to, dist.get(a)! + 1);
+          if (stereo.has(e.to)) { d = dist.get(e.to)!; break; }
+          q.push(e.to);
+        }
+      }
+      return d;
+    };
+    for (const c of ch2) out.ch2.set(c, distance(c));
+    for (const [c, p, q] of mePairs) {
+      const d = distance(c), ring = g.mol.isRingAtom(c);
+      out.me.set(p, { sign: 1, d, ring });
+      out.me.set(q, { sign: -1, d, ring });
+    }
+  } catch { /* leave everything equivalent */ }
+  return out;
+}
+
+/**
+ * Estimated shift difference (ppm) between diastereotopic CH₂ protons. Rigid rings next to a stereocentre
+ * give the largest splits (deoxypodophyllotoxin H-4 3.08/2.75, lactone OCH₂ 4.46/3.92); open chains far
+ * less (2-butanol CH₂ 1.49/1.45), shrinking with distance; O–CH₂–O far from the stereocentres ≈ 0.02.
+ */
+function diaSplit(g: Graph, ch: Chem, c: number, d: number): number {
+  const edges = ch.edges(c);
+  const het = edges.filter((e) => ch.z(e.to) === 7 || ch.z(e.to) === 8).length;
+  const pi = edges.filter((e) => ch.arom(e.to) || ch.edges(e.to).some((f) => f.order >= 2)).length;
+  let s: number;
+  if (g.mol.isRingAtom(c)) {
+    s = d <= 1 ? 0.35 : d === 2 ? 0.2 : d === 3 ? 0.1 : d === Infinity ? 0.12 : 0.03;
+    if (het === 1 && d <= 2) s *= 1.3;
+  } else {
+    s = d <= 1 ? (pi || het ? 0.15 : 0.06) : d === 2 ? 0.04 : d === Infinity ? 0.04 : 0.015;
+  }
+  if (het >= 2) s = Math.min(s, d <= 2 ? 0.1 : 0.02); // acetal CH₂: both H see two O
+  return s;
+}
+
+/** Typical |²J| of a CH₂, Hz: 12–13 for alkyl, larger next to π systems, smaller next to O/N and in small rings. */
+function gemJ(g: Graph, ch: Chem, c: number): number {
+  const edges = ch.edges(c);
+  const rs = g.mol.isRingAtom(c) ? g.mol.getAtomRingSize(c) : 0;
+  const het = edges.filter((e) => ch.z(e.to) === 7 || ch.z(e.to) === 8).length;
+  if (rs === 3) return 5;
+  if (het >= 2) return rs === 5 ? 1.5 : 6;
+  let j = het ? (rs === 5 ? 9 : 11) : 12.5;
+  const pi = edges.filter((e) => ch.arom(e.to) || ch.edges(e.to).some((f) => f.order >= 2)).length;
+  j += 1.5 * Math.min(pi, 2);
+  return round(j, 1);
 }
 
 /** Backbone sp³ carbon of a vinyl-type polymer chain (both chain neighbours sp³ carbons) carrying an aromatic ring. */
