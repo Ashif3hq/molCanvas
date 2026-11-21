@@ -1,7 +1,8 @@
 // Compares predicted ¹H / ¹³C shifts with experimental values (CDCl₃ unless noted) and checks refusals.
 // Each experimental shift is matched to the nearest predicted peak. Additive increments are estimates, so the
 // limits are generous: ¹H 0.45 ppm (0.6 for polymers), ¹³C 8 ppm. Run with -v to print every peak.
-import { fromSmiles } from '../src/chem';
+import { fromSmiles, toOCL } from '../src/chem';
+import { equivalence, topicity } from '../src/nmr-symmetry';
 import { predictNmr, Nucleus } from '../src/nmr';
 import { PRESETS } from '../src/presets';
 
@@ -110,6 +111,56 @@ for (const smi of REFUSED) {
   // Valine isopropyl: two methyl doublets.
   const val = predictNmr(fromSmiles('CC(C)C(N)C(=O)O'), '1H');
   if (!val.ok || val.value.peaks.filter((p) => p.assignment === 'CH₃, diastereotopic').length !== 2) { bad++; console.error('FAIL valine methyls should be diastereotopic'); }
+}
+
+// Stereo-aware equivalence (nmr-symmetry.ts): topicity of CH₂ protons and methyl pairs, ring and cage symmetry.
+{
+  const eqOf = (smi: string) => {
+    const { mol } = toOCL(fromSmiles(smi));
+    return { mol, e: equivalence(mol) };
+  };
+  const ch2 = (smi: string, atom: number) => {
+    const { e } = eqOf(smi);
+    const h = e.hCls[atom], p = e.hProper[atom], c = e.hConst[atom];
+    return topicity(c[0] === c[1], h[0] === h[1], p[0] === p[1]);
+  };
+  const cases: [string, number, string, string][] = [
+    ['ClCCl', 1, 'homotopic', 'dichloromethane'],
+    ['CCC', 1, 'homotopic', 'propane C2'],
+    ['CCO', 1, 'enantiotopic', 'ethanol CH₂'],
+    ['OCc1ccccc1', 1, 'enantiotopic', 'benzyl alcohol CH₂'],
+    ['CC(O)CC', 3, 'diastereotopic', '2-butanol C3 (no wedges)'],
+    ['C[C@H](O)CC', 3, 'diastereotopic', '(S)-2-butanol C3'],
+    ['O[C@@H](C)C[C@@H](C)O', 3, 'diastereotopic', 'meso-2,4-pentanediol C3'],
+    ['O[C@@H](C)C[C@H](C)O', 3, 'homotopic', '(R,R)-2,4-pentanediol C3 (C₂ axis)'],
+    ['OC1CCCCC1', 2, 'diastereotopic', 'cyclohexanol C2 (cis / trans to OH)'],
+    ['C1CCCCC1', 0, 'homotopic', 'cyclohexane'],
+    ['C=CC', 0, 'diastereotopic', 'propene =CH₂'],
+    ['C1C2CC3CC1CC(C2)C3', 0, 'homotopic', 'adamantane CH₂'],
+    ['C1CC2CCC1C2', 0, 'diastereotopic', 'norbornane C2 exo / endo'],
+    ['C1CC2CCC1C2', 6, 'homotopic', 'norbornane C7'],
+  ];
+  for (const [smi, atom, want, what] of cases) {
+    const got = ch2(smi, atom);
+    if (got !== want) { bad++; console.error(`FAIL topicity ${what}: ${got}, expected ${want}`); }
+  }
+  // Methyl pairs: diastereotopic next to a stereocentre (valine, menthol, camphor), enantiotopic in 2-propanol,
+  // and the two N-methyls of DMF differ through slow amide rotation.
+  const distinct = (smi: string, a: number, b: number) => { const { e } = eqOf(smi); return e.cls[a] !== e.cls[b]; };
+  const pairs: [string, number, number, boolean, string][] = [
+    ['CC(C)[C@H](N)C(=O)O', 0, 2, true, 'L-valine isopropyl methyls'],
+    ['CC(C)C(N)C(=O)O', 0, 2, true, 'valine without wedges'],
+    ['CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O', 0, 2, true, 'menthol isopropyl methyls'],
+    ['CC1(C)[C@@H]2CC[C@@]1(C)C(=O)C2', 0, 2, true, 'camphor C8 / C9'],
+    ['CC(C)O', 0, 2, false, '2-propanol methyls'],
+    ['CN(C)C=O', 0, 2, true, 'DMF N-methyls'],
+    ['CCN(CC)C(C)=O', 0, 4, true, 'N,N-diethylacetamide CH₃'],
+    ['CCN(CC)CC', 0, 4, false, 'triethylamine CH₃'],
+    ['c1ccc2ccccc2c1', 0, 5, false, 'naphthalene C1 / C5'],
+  ];
+  for (const [smi, a, b, want, what] of pairs) {
+    if (distinct(smi, a, b) !== want) { bad++; console.error(`FAIL equivalence ${what}: expected ${want ? 'different' : 'equivalent'}`); }
+  }
 }
 
 // Every library preset must either predict without throwing, with finite shifts in a sane window, or be refused.

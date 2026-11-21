@@ -15,11 +15,16 @@
 // one * continues into the next unit at the other *, so backbone atoms see the neighbours they have in the
 // real chain. Polymer signals are drawn broad and without fine structure, as they appear in practice.
 //
+// Which nuclei share a signal comes from a stereo-aware symmetry analysis (nmr-symmetry.ts): homotopic and
+// enantiotopic nuclei are merged, diastereotopic ones (CH₂ next to a stereocentre, isopropyl methyls in
+// valine or menthol, camphor's gem-dimethyl, =CH₂ cis/trans H, amide N-methyls) are kept apart.
+//
 // These are estimates: typically ±0.2–0.3 ppm for ¹H and ±3–5 ppm for ¹³C. Peaks the tables only cover
 // approximately are flagged `rough`; elements and species outside the tables are refused.
 import { Molecule } from 'openchemlib';
 import { Doc, validBrackets } from './model';
 import { toOCL } from './chem';
+import { equivalence, Equivalence, Topicity, topicity } from './nmr-symmetry';
 
 export type Nucleus = '1H' | '13C';
 export const NMR_SOLVENTS = ['CDCl3', 'DMSO-d6', 'CD3OD', 'D2O', 'acetone-d6', 'C6D6', 'CD3CN', 'CD2Cl2'] as const;
@@ -46,6 +51,8 @@ export interface NmrPeak {
   rough?: boolean;
   /** ¹³C: no attached H (weak in a routine spectrum). */
   quaternary?: boolean;
+  /** Relation of the nuclei in a CH₂ (or a pair of methyls) to each other: one signal unless diastereotopic. */
+  topicity?: Topicity;
   label: string;
 }
 
@@ -75,7 +82,8 @@ interface Graph {
   y: number[];
   isPolymer: boolean;
   backbone: Set<number>;
-  cls: number[]; // symmetry class (graph refinement)
+  cls: number[]; // NMR equivalence class (stereo-aware for molecules, graph refinement for polymer repeat units)
+  eq?: Equivalence;
 }
 
 const ALLOWED = new Set([1, 6, 7, 8, 9, 14, 16, 17, 35, 53]);
@@ -177,9 +185,18 @@ function buildGraph(doc: Doc): Graph | string {
     cls = next;
     if (done) break;
   }
-  const clsByAtom = new Array<number>(n).fill(-1);
+  let clsByAtom = new Array<number>(n).fill(-1);
   heavy.forEach((h, k) => { clsByAtom[h] = cls[k]; });
-  return { mol, ids, atoms, adj, nh, hPos, x, y, isPolymer, backbone, cls: clsByAtom };
+  // Molecules: stereo-aware classes replace the connectivity-only refinement. Repeat units keep the
+  // refinement, which follows the chain through the * ends (tacticity is not drawn anyway).
+  let eq: Equivalence | undefined;
+  if (!isPolymer) {
+    try {
+      eq = equivalence(mol);
+      clsByAtom = clsByAtom.map((c, i) => (c < 0 ? c : eq!.cls[i]));
+    } catch { eq = undefined; }
+  }
+  return { mol, ids, atoms, adj, nh, hPos, x, y, isPolymer, backbone, cls: clsByAtom, eq };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -442,6 +459,7 @@ interface HSite {
   side?: number; // for =CH₂: which side of the C=C the H is on
   /** One of the two diastereotopic H of a CH₂: geminal ²J to its partner, Hz. */
   gem?: number;
+  topicity?: Topicity;
 }
 
 const round = (v: number, d = 2) => Math.round(v * 10 ** d) / 10 ** d;
@@ -726,11 +744,10 @@ function predictH(g: Graph, solvent: NmrSolvent): NmrResult {
     const me = n === 3 ? dia.me.get(c) : undefined;
     if (me) {
       // Diastereotopic methyl pair (menthol isopropyl 0.90 / 0.78): nudge the two apart.
-      const split = me.ring ? (me.d <= 2 ? 0.15 : 0.08) : me.d <= 1 ? 0.1 : me.d === 2 ? 0.04 : 0;
-      if (split) {
-        sites.push({ atom: c, n, shift: s + (me.sign * split) / 2, what: `${what}, diastereotopic`, rough });
-        continue;
-      }
+      // Amide N-methyls (DMF 2.96 / 2.88) differ through slow C–N rotation rather than a stereocentre.
+      const split = me.amide ? 0.08 : me.ring ? (me.d <= 2 ? 0.15 : 0.08) : me.d <= 1 ? 0.1 : me.d === 2 ? 0.04 : 0.02;
+      sites.push({ atom: c, n, shift: s + (me.sign * split) / 2, what: me.amide ? `${what}, cis/trans to C=O` : `${what}, diastereotopic`, rough, topicity: me.amide ? undefined : 'diastereotopic' });
+      continue;
     }
     const d = n === 2 ? dia.ch2.get(c) : undefined;
     const split = d === undefined ? 0 : diaSplit(g, ch, c, d);
@@ -738,11 +755,11 @@ function predictH(g: Graph, solvent: NmrSolvent): NmrResult {
       // Diastereotopic CH₂: the two H sit in different environments, so they give two signals that
       // couple to each other (²J) as well as to their neighbours.
       const j = gemJ(g, ch, c);
-      sites.push({ atom: c, n: 1, shift: s + split / 2, what: `${what}, diastereotopic (downfield)`, rough, gem: j });
-      sites.push({ atom: c, n: 1, shift: s - split / 2, what: `${what}, diastereotopic (upfield)`, rough, gem: j });
+      sites.push({ atom: c, n: 1, shift: s + split / 2, what: `${what}, diastereotopic (downfield)`, rough, gem: j, topicity: 'diastereotopic' });
+      sites.push({ atom: c, n: 1, shift: s - split / 2, what: `${what}, diastereotopic (upfield)`, rough, gem: j, topicity: 'diastereotopic' });
       continue;
     }
-    sites.push({ atom: c, n, shift: s, what, rough });
+    sites.push({ atom: c, n, shift: s, what, rough, topicity: n === 2 ? dia.ch2Topicity.get(c) : undefined });
   }
 
   // Couplings between sites on neighbouring atoms (3J), with equivalent sites grouped.
@@ -800,6 +817,7 @@ function predictH(g: Graph, solvent: NmrSolvent): NmrResult {
     peaks.push({
       shift: round(first.shift, 2), count, atoms, assignment: first.what, couplings, mult, width,
       range: first.exch?.range, exchangeable: !!first.exch, rough: list.some((k) => sites[k].rough), label: '',
+      ...(first.topicity ? { topicity: first.topicity } : {}),
     });
   }
   peaks.sort((a, b) => b.shift - a.shift);
@@ -807,85 +825,70 @@ function predictH(g: Graph, solvent: NmrSolvent): NmrResult {
   if (exchanged && sites.some((s) => s.exch)) notes.push(`O–H / N–H protons exchange with ${solvent} and are not shown.`);
   if (sites.some((s) => s.gem !== undefined)) notes.push('Diastereotopic CH₂ protons (next to a stereocentre or in a ring) are given as two signals with a geminal coupling; the shift difference between them is an estimate.');
   if (sites.some((s) => s.what.endsWith(', diastereotopic'))) notes.push('Diastereotopic methyl groups (e.g. an isopropyl next to a stereocentre) are given as two signals; the shift difference is an estimate.');
+  if (sites.some((s) => s.what.endsWith('cis/trans to C=O'))) notes.push('Amide C–N rotation is slow on the NMR time scale, so the two N-alkyl groups of a tertiary amide give separate signals.');
+  if (g.eq && g.eq.undrawn >= 2) notes.push(`${g.eq.undrawn} stereocentres have no wedges: protons are treated as equivalent only when they are equivalent in every stereoisomer.`);
   if (sites.some((s) => s.exch) && !exchanged) notes.push('O–H, N–H and S–H positions depend on concentration, temperature and water; they are drawn broad.');
   if (anyRough) notes.push('Peaks marked ~ are outside the main increment tables and less reliable.');
   return { ok: true, value: { nucleus: '1H', peaks, isPolymer: g.isPolymer, notes } };
 }
 
 /**
- * sp³ CH₂ carbons whose two H are diastereotopic, mapped to the bond distance to the nearest stereocentre
- * (Infinity when there is none, e.g. cis/trans ring positions). Each H is swapped in turn for a test atom
- * and the two results compared with stereo (OpenChemLib diastereotopic IDs): identical or mirror images
- * mean equivalent protons (ethanol), anything else means diastereotopic (2-butanol C3). Stereocentres
- * drawn without wedges are given an arbitrary configuration, since the protons are diastereotopic in
- * every stereoisomer. Polymers are left out: their signals are broad and tacticity-dependent.
+ * Diastereotopic groups, read from the stereo-aware equivalence classes (nmr-symmetry.ts): CH₂ carbons whose
+ * two H fall in different classes, mapped to the bond distance to the nearest stereocentre (Infinity when
+ * there is none, e.g. cis/trans ring positions in cyclohexanol), and methyls that share their constitution
+ * with another methyl but not its class (valine and menthol isopropyl, camphor gem-dimethyl, DMF N-methyls).
+ * Stereocentres drawn without wedges count, since the protons are diastereotopic in every stereoisomer.
+ * Polymers are left out: their signals are broad and tacticity-dependent.
  */
 interface Diastereotopic {
   /** CH₂ carbon → bond distance to the nearest stereocentre. */
   ch2: Map<number, number>;
-  /** Methyl carbon of a diastereotopic pair (isopropyl next to a stereocentre, ring gem-dimethyl) → which of the pair, and the distance. */
-  me: Map<number, { sign: 1 | -1; d: number; ring: boolean }>;
+  /** Methyl carbon of a diastereotopic set → which of the set, distance from its carbon to the nearest stereocentre, ring / amide context. */
+  me: Map<number, { sign: 1 | -1; d: number; ring: boolean; amide: boolean }>;
+  /** CH₂ carbon → topicity of its two H. */
+  ch2Topicity: Map<number, Topicity>;
 }
 
 function diastereotopic(g: Graph): Diastereotopic {
-  const out: Diastereotopic = { ch2: new Map(), me: new Map() };
-  if (g.isPolymer) return out;
-  try {
-    const m = g.mol.getCompactCopy();
-    const n0 = m.getAllAtoms();
-    for (let i = 0; i < n0; i++) m.setAtomMapNo(i, i + 1, false);
-    m.addImplicitHydrogens();
-    m.addMissingChirality();
-    const ids = m.getDiastereotopicAtomIDs();
-    m.ensureHelperArrays(Molecule.cHelperCIP);
-    const orig = (i: number) => m.getAtomMapNo(i) - 1;
-    const stereo = new Set<number>();
-    const ch2: number[] = [];
-    const mePairs: [number, number, number][] = []; // centre, methyl, methyl (original indices), lower ID first
-    for (let i = 0; i < m.getAllAtoms(); i++) {
-      const o = orig(i);
-      if (o < 0 || m.getAtomicNo(i) === 1) continue;
-      if (m.isAtomStereoCenter(i)) stereo.add(o);
-      const mes: number[] = [];
-      for (let k = 0; k < m.getAllConnAtoms(i); k++) {
-        const a = m.getConnAtom(i, k), oa = orig(a);
-        if (oa >= 0 && m.getAtomicNo(a) === 6 && g.nh[oa] === 3 && g.adj[oa].length === 1) mes.push(a);
+  const out: Diastereotopic = { ch2: new Map(), me: new Map(), ch2Topicity: new Map() };
+  const eq = g.eq;
+  if (g.isPolymer || !eq) return out;
+  const distance = (c: number) => {
+    // Breadth-first distance to the nearest stereocentre other than this atom.
+    const dist = new Map<number, number>([[c, 0]]);
+    const q = [c];
+    while (q.length) {
+      const a = q.shift()!;
+      for (const e of g.adj[a]) {
+        if (dist.has(e.to)) continue;
+        dist.set(e.to, dist.get(a)! + 1);
+        if (eq.stereo.has(e.to)) return dist.get(e.to)!;
+        q.push(e.to);
       }
-      if (mes.length === 2 && ids[mes[0]] !== ids[mes[1]]) {
-        const [p, q] = ids[mes[0]] < ids[mes[1]] ? mes : [mes[1], mes[0]];
-        mePairs.push([o, orig(p), orig(q)]);
-      }
-      if (m.getAtomicNo(i) !== 6 || g.nh[o] !== 2 || !g.atoms.includes(o)) continue;
-      const hs: number[] = [];
-      for (let k = 0; k < m.getAllConnAtoms(i); k++) {
-        const a = m.getConnAtom(i, k);
-        if (m.getAtomicNo(a) === 1 && m.getAtomMass(a) !== 2) hs.push(a);
-      }
-      if (hs.length === 2 && ids[hs[0]] !== ids[hs[1]]) ch2.push(o);
     }
-    const distance = (c: number) => {
-      // Breadth-first distance to the nearest stereocentre other than this atom.
-      const dist = new Map<number, number>([[c, 0]]);
-      const q = [c];
-      let d = Infinity;
-      while (q.length && d === Infinity) {
-        const a = q.shift()!;
-        for (const e of g.adj[a]) {
-          if (dist.has(e.to)) continue;
-          dist.set(e.to, dist.get(a)! + 1);
-          if (stereo.has(e.to)) { d = dist.get(e.to)!; break; }
-          q.push(e.to);
-        }
-      }
-      return d;
-    };
-    for (const c of ch2) out.ch2.set(c, distance(c));
-    for (const [c, p, q] of mePairs) {
-      const d = distance(c), ring = g.mol.isRingAtom(c);
-      out.me.set(p, { sign: 1, d, ring });
-      out.me.set(q, { sign: -1, d, ring });
+    return Infinity;
+  };
+  for (const c of g.atoms) {
+    const h = eq.hCls[c];
+    if (g.mol.getAtomicNo(c) !== 6 || g.nh[c] !== 2 || h.length !== 2) continue;
+    const t = topicity(eq.hConst[c][0] === eq.hConst[c][1], h[0] === h[1], eq.hProper[c][0] === eq.hProper[c][1]);
+    out.ch2Topicity.set(c, t);
+    if (t === 'diastereotopic') out.ch2.set(c, distance(c));
+  }
+  const methyls = new Map<number, number[]>(); // constitution → methyl carbons
+  for (const c of g.atoms) {
+    if (g.mol.getAtomicNo(c) !== 6 || g.nh[c] !== 3 || g.adj[c].length !== 1) continue;
+    methyls.set(eq.constitution[c], [...(methyls.get(eq.constitution[c]) ?? []), c]);
+  }
+  for (const list of methyls.values()) {
+    const classes = [...new Set(list.map((c) => g.cls[c]))].sort((x, y) => x - y);
+    if (classes.length < 2) continue;
+    for (const c of list) {
+      const at = g.adj[c][0].to;
+      const amide = g.mol.getAtomicNo(at) === 7 && g.adj[at].some((e) => g.adj[e.to].some((f) => f.order === 2 && g.mol.getAtomicNo(f.to) === 8 && e.to !== c));
+      out.me.set(c, { sign: classes.indexOf(g.cls[c]) % 2 ? -1 : 1, d: distance(at), ring: g.mol.isRingAtom(at), amide });
     }
-  } catch { /* leave everything equivalent */ }
+  }
   return out;
 }
 
@@ -965,6 +968,7 @@ interface Step { atom: number; off: number }
 
 function predictC(g: Graph): NmrResult {
   const ch = new Chem(g);
+  const dia = diastereotopic(g);
   const notes: string[] = [];
   let anyRough = false;
   const sites: { atom: number; shift: number; what: string; rough: boolean; quaternary: boolean }[] = [];
@@ -1060,6 +1064,13 @@ function predictC(g: Graph): NmrResult {
       const ks = edges.map((e) => ch.kind(c, e));
       what = describeSp3(g, c, nh === 3 ? 'CH₃' : nh === 2 ? 'CH₂' : nh === 1 ? 'CH' : nh === 4 ? 'CH₄' : 'C', ks);
       if (edges.some((e) => ch.edges(e.to).filter((f) => ch.z(f.to) === 9).length >= 2)) rough = true;
+    }
+    // Diastereotopic methyl carbons (valine 19.0 / 17.6, camphor 19.8 / 19.2) and amide N-methyls
+    // (DMF 36.5 / 31.4) are separate signals; the increments cannot tell them apart, so they are nudged.
+    const me = dia.me.get(c);
+    if (me) {
+      s += me.sign * (me.amide ? 2.5 : me.ring || me.d <= 2 ? 0.6 : 0.25);
+      what += me.amide ? ', cis/trans to C=O' : ', diastereotopic';
     }
     anyRough ||= rough;
     sites.push({ atom: c, shift: s, what, rough, quaternary: nh === 0 });

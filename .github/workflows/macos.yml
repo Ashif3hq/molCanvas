@@ -39,6 +39,7 @@ jobs:
       - run: npm run check:radicals
       - run: npm run check:brackets
       - run: npm run check:nmr
+      - run: npm run check:nmr-benchmark
 
       - name: Build app and DMG
         id: tauri
