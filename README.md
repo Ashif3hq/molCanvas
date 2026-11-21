@@ -28,6 +28,7 @@ slide deck or lab notebook.
   triplet carbene…), and an optional lone-pair view draws non-bonding pairs. Radicals are kept in
   SMILES, MOL, CDXML and the 3D formats.
 - **ChemDraw-style hotkeys:** hover an atom and press `N`, `O`, `S`, `F`, `L` (Cl), `B` (Br)… (`+`, `-` for charge, `.` for a radical)
+- **ChemDraw-style drawing mode** (toolbar toggle, remembered between sessions): hover an atom and type a label (`Cl`, `OMe`, `CO2H`, `Ph`), `1`–`3` grows a bond and `4`–`8` adds a ring; hover a bond and press `4`–`8` (or `R` for benzene) to fuse a ring, `W`/`H`/`Y` for wedge, hash or wavy; drag the single-bond tool past one bond length to grow a zig-zag chain; more single-key tools (`W`, `H`, `X`, `4`–`8`, `+`, `-`, `.`). Turn it off for the classic behaviour.
   to change it; hover a bond and press `1`, `2`, `3` to set its order. Type a group such as
   `OMe`, `CO2H`, `Boc`, `Ph` or `TBS` with the text tool to expand it.
 - **350+ presets**, all validated in CI:

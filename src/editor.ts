@@ -37,6 +37,34 @@ type Hit =
   | { type: 'bracket'; id: number }
   | null;
 
+/**
+ * 'classic': MolCanvas's own drawing behaviour.
+ * 'chemdraw': keyboard-first drawing in the style ChemDraw users are used to: hover an atom and type a
+ * label (Cl, OMe, CO2H…), drag a bond out into a chain, number keys add bonds and fuse rings, and more
+ * single-key tool shortcuts. Original MolCanvas code; it only borrows the interaction style.
+ */
+export type DrawStyle = 'classic' | 'chemdraw';
+
+/** How long (ms) keystrokes on one atom are combined into one label (C, l → Cl; o, m, e → OMe). */
+const TYPE_AHEAD_MS = 900;
+
+/** Extra single-key tool shortcuts in ChemDraw-style mode (used when the pointer is not on an atom or bond). */
+const CHEMDRAW_SHORTCUTS: Record<string, Tool> = {
+  w: { kind: 'bond', order: 1, stereo: 'wedge' }, h: { kind: 'bond', order: 1, stereo: 'hash' }, y: { kind: 'bond', order: 1, stereo: 'wavy' },
+  x: { kind: 'erase' }, '+': { kind: 'charge', delta: 1 }, '=': { kind: 'charge', delta: 1 }, '-': { kind: 'charge', delta: -1 }, '.': { kind: 'radical' },
+  '4': { kind: 'ring', size: 4, aromatic: false }, '5': { kind: 'ring', size: 5, aromatic: false }, '6': { kind: 'ring', size: 6, aromatic: false },
+  '7': { kind: 'ring', size: 7, aromatic: false }, '8': { kind: 'ring', size: 8, aromatic: false },
+};
+
+interface TypeAhead {
+  atom: number;
+  pos: Point;
+  buf: string;
+  time: number;
+  /** Undo depth right after the label this buffer last applied (null: nothing applied yet). */
+  depth: number | null;
+}
+
 interface Drag {
   start: Point; // world
   startScreen: Point;
@@ -79,6 +107,10 @@ export class Editor {
   colorAtoms = true;
   showLonePairs = false;
   showErrors = true;
+  drawStyle: DrawStyle = 'classic';
+  /** Group abbreviations the label type-ahead knows (Me, OMe, CO2H…). */
+  labelNames: () => string[] = () => [];
+  private typeAhead: TypeAhead | null = null;
 
   onChange: () => void = () => {};
   onStatus: (msg: string) => void = () => {};
@@ -264,13 +296,31 @@ export class Editor {
     this.render();
   }
 
+  setDrawStyle(style: DrawStyle) {
+    this.drawStyle = style;
+    this.typeAhead = null;
+    this.onStatus(this.toolHint());
+  }
+
   toolHint(): string {
+    const base = this.baseToolHint();
+    if (this.drawStyle !== 'chemdraw') return base;
+    const t = this.tool.kind;
+    if (t === 'bond' || t === 'chain' || t === 'atom' || t === 'ring') {
+      return `${base} ChemDraw-style: hover an atom and type a label (Cl, OMe, CO2H), 1–3 grows a bond, 4–8 adds a ring; on a bond 4–8 or R fuses a ring.`;
+    }
+    return base;
+  }
+
+  private baseToolHint(): string {
     const t = this.tool;
     switch (t.kind) {
       case 'select': return 'Select: drag to box-select, drag a selection to move it, double-click to select a whole molecule.';
       case 'lasso': return 'Lasso: draw a loop around atoms, bonds, arrows or text to select them (Shift adds to the selection). Drag a selection to move it.';
       case 'erase': return 'Eraser: click or drag over atoms, bonds, arrows and text to delete them.';
-      case 'bond': return 'Bond: click an atom to grow a bond, drag to set direction, click a bond to change it. Hover + letter key sets an element.';
+      case 'bond': return this.drawStyle === 'chemdraw' && t.order === 1 && t.stereo === 'none'
+        ? 'Bond: click an atom to grow a bond, drag to aim it, keep dragging to grow a zig-zag chain. Click a bond to change it.'
+        : 'Bond: click an atom to grow a bond, drag to set direction, click a bond to change it. Hover + letter key sets an element.';
       case 'chain': return 'Chain: drag from an atom or empty space to draw a zig-zag carbon chain.';
       case 'ring': return 'Ring: click empty space to place, click a bond to fuse, click an atom for a spiro/substituent ring.';
       case 'atom': return `Atom ${t.el}: click an atom to change it, click empty space to add one, drag from an atom to add a bonded ${t.el}.`;
@@ -523,7 +573,7 @@ export class Editor {
         const pl = this.drawPlacement(drag, p);
         this.setGhost(pl);
         if (this.ghostProblem) this.emitHover();
-        else if (this.tool.kind === 'chain' && pl && 'count' in pl) this.onHover({ title: 'Chain', detail: `${(pl as Placement & { count: number }).count} bonds. Release to add the chain.` });
+        else if ((this.tool.kind === 'chain' || this.tool.kind === 'bond') && pl && 'count' in pl) this.onHover({ title: 'Chain', detail: `${(pl as Placement & { count: number }).count} bonds. Release to add the chain.` });
         this.render();
         return;
       }
@@ -747,7 +797,10 @@ export class Editor {
       const target = findAtomNear(this.doc, p, BOND * 0.3, new Set(startAtom !== undefined ? [startAtom] : []));
       let end: Point;
       if (target) end = target;
-      else {
+      else if (this.dragGrowsChain() && dist(start, p) > BOND * 1.6) {
+        // ChemDraw-style: dragging a plain bond well past one bond length grows a zig-zag chain
+        return chain(this.doc, start, p, startAtom);
+      } else {
         const ang = snapAngle(Math.atan2(p.y - start.y, p.x - start.x), drag.shift ? 1 : 30);
         end = { x: start.x + Math.cos(ang) * BOND, y: start.y + Math.sin(ang) * BOND };
       }
@@ -756,6 +809,12 @@ export class Editor {
       return singleBond(this.doc, start, end, startAtom, t.kind === 'atom' ? t.el : 'C', order, stereo);
     }
     return null;
+  }
+
+  /** ChemDraw-style mode: a plain single-bond drag turns into a chain once it is long enough. */
+  private dragGrowsChain(): boolean {
+    const t = this.tool;
+    return this.drawStyle === 'chemdraw' && t.kind === 'bond' && t.order === 1 && t.stereo === 'none';
   }
 
   private applyPlacement(d: Doc, pl: Placement) {
@@ -1103,26 +1162,31 @@ export class Editor {
   }
 
   /** Set an atom's element; also accepts a group abbreviation (OMe, CO2H, Ph…) via `expandAbbreviation`. */
-  setAtomLabel(id: number, label: string) {
-    if (!label) return;
+  setAtomLabel(id: number, label: string): boolean {
+    if (!label) return false;
     const el = label.length <= 2 ? label[0].toUpperCase() + label.slice(1).toLowerCase() : label;
     if (this.isElement(el) || el === '*') {
-      this.commit((d) => { const a = atomById(d, id)!; a.el = el; if (el === '*') delete a.radical; });
-      return;
+      return this.commit((d) => { const a = atomById(d, id)!; a.el = el; delete a.sub; if (el === '*') delete a.radical; });
     }
-    if (!this.expandAbbreviation(id, label)) this.onStatus(`Unknown element or group “${label}”.`);
+    const ok = this.expandAbbreviation(id, label);
+    if (ok === null) this.onStatus(`Unknown element or group “${label}”.`);
+    return !!ok;
   }
 
   isElement: (el: string) => boolean = () => true;
   abbreviation: (label: string) => Doc | null = () => null;
 
-  private expandAbbreviation(id: number, label: string): boolean {
+  /** Replace an atom by a group. null: unknown label; false: refused (e.g. the atom has 2+ bonds). */
+  private expandAbbreviation(id: number, label: string): boolean | null {
     const frag = this.abbreviation(label);
-    if (!frag) return false;
+    if (!frag) return null;
     const nb = neighbors(this.doc, id);
     const A = atomById(this.doc, id)!;
-    if (nb.length > 1) return false;
-    this.commit((d) => {
+    if (nb.length > 1) {
+      this.onWarn(`${label} is a group with one attachment point, so it can only replace an atom with at most one bond.`);
+      return false;
+    }
+    return this.commit((d) => {
       if (nb.length === 0) {
         removeObjects(d, new Set([id]));
         const pl = placeTemplate(d, frag, 'group', A);
@@ -1135,7 +1199,118 @@ export class Editor {
         mergeInto(d, pl.frag, 0, 0, pl.map);
       }
     });
+  }
+
+  // ---------- ChemDraw-style keyboard drawing ----------
+
+  /** The label a typed buffer stands for (element or group abbreviation), or null. */
+  resolveLabel(buf: string): string | null {
+    if (buf.length === 1) {
+      const el = HOTKEY_ELEMENTS[buf] ?? buf.toUpperCase();
+      return el === '*' || this.isElement(el) ? el : null;
+    }
+    if (/^[a-z]{2}$/i.test(buf)) {
+      const el = buf[0].toUpperCase() + buf[1].toLowerCase();
+      if (this.isElement(el)) return el;
+    }
+    const names = this.labelNames();
+    return names.find((n) => n === buf) ?? names.find((n) => n.toLowerCase() === buf.toLowerCase()) ?? null;
+  }
+
+  /** Could more typing turn this buffer into a known label? */
+  private labelPrefix(buf: string): boolean {
+    const b = buf.toLowerCase();
+    if (/^[a-z]$/.test(b)) return true; // every letter starts some two-letter element
+    return this.labelNames().some((n) => n.length > b.length && n.toLowerCase().startsWith(b));
+  }
+
+  private hitExists(h: NonNullable<Hit>): boolean {
+    if (h.type === 'atom') return atomById(this.doc, h.id) !== undefined;
+    if (h.type === 'bond') return this.doc.bonds.some((b) => b.id === h.id);
     return true;
+  }
+
+  /** Undo the label the type-ahead applied last, so the longer label replaces it in one step. */
+  private revertTypeAhead(ta: TypeAhead) {
+    if (ta.depth !== null && this.undoStack.length === ta.depth && !this.redoStack.length) this.undo();
+    ta.depth = null;
+  }
+
+  private applyTyped(ta: TypeAhead, label: string) {
+    this.revertTypeAhead(ta);
+    const ok = this.setAtomLabel(ta.atom, label);
+    ta.depth = ok ? this.undoStack.length : null;
+    if (ok) this.onStatus(`Label ${label}. Keep typing to extend it (e.g. C, l → Cl; O, M, e → OMe), Enter to finish.`);
+  }
+
+  /**
+   * ChemDraw-style key handling over the hovered atom or bond. Returns true when the key was used.
+   * Letters typed quickly on one atom build one label; digits grow bonds (1–3) or rings (4–8).
+   */
+  private chemdrawKey(e: KeyboardEvent): boolean {
+    const k = e.key;
+    if (k.length !== 1) {
+      if (k === 'Enter' && this.typeAhead) { this.typeAhead = null; this.onStatus(this.toolHint()); return true; }
+      return false;
+    }
+    const now = Date.now();
+    const ta = this.typeAhead;
+    // still typing on the same atom? (after a group expansion the atom is gone until the undo puts it back)
+    const live = ta && now - ta.time < TYPE_AHEAD_MS && dist(this.pointer, ta.pos) < BOND * 0.6 &&
+      (atomById(this.doc, ta.atom) !== undefined || ta.depth !== null) ? ta : null;
+    if (live && /^[a-z0-9]$/i.test(k)) {
+      const cand = live.buf + k;
+      const label = this.resolveLabel(cand);
+      if (label) { live.buf = cand; live.time = now; this.applyTyped(live, label); return true; }
+      if (this.labelPrefix(cand)) { live.buf = cand; live.time = now; this.onStatus(`Typing “${cand}”…`); return true; }
+      this.typeAhead = null;
+      if (/[0-9]/.test(k)) return false;
+    }
+    const h = this.hover && this.hitExists(this.hover) ? this.hover : null;
+    if (h?.type === 'atom' && /^[a-z*]$/i.test(k)) {
+      const A = atomById(this.doc, h.id)!;
+      const fresh: TypeAhead = { atom: h.id, pos: { x: A.x, y: A.y }, buf: k, time: now, depth: null };
+      this.typeAhead = fresh;
+      const label = this.resolveLabel(k);
+      if (label) this.applyTyped(fresh, label);
+      else this.onStatus(`Typing “${k}”…`);
+      return true;
+    }
+    if (h?.type === 'atom' && /^[1-8]$/.test(k)) {
+      const n = parseInt(k, 10);
+      const A = atomById(this.doc, h.id)!;
+      let pl: Placement;
+      if (n <= 3) {
+        const v = dirVec(freeDirection(this.doc, h.id));
+        pl = singleBond(this.doc, A, { x: A.x + v.x * BOND, y: A.y + v.y * BOND }, h.id, 'C', n as 1 | 2 | 3, 'none');
+      } else pl = ringOnAtom(this.doc, h.id, n, false);
+      this.commit((d) => this.applyPlacement(d, pl));
+      return true;
+    }
+    if (h?.type === 'bond') {
+      const ring = /^[4-8]$/.test(k) ? { n: parseInt(k, 10), aromatic: false } : k === 'r' || k === 'R' ? { n: 6, aromatic: true } : null;
+      if (ring) {
+        const pl = ringOnBond(this.doc, h.id, ring.n, ring.aromatic, this.analysis().ringCenter.get(h.id), this.pointer);
+        this.commit((d) => this.applyPlacement(d, pl));
+        return true;
+      }
+      const stereo = ({ w: 'wedge', h: 'hash', y: 'wavy' } as Record<string, BondStereo>)[k.toLowerCase()];
+      if (stereo) {
+        const id = h.id;
+        this.commit((d) => {
+          const b = d.bonds.find((x) => x.id === id)!;
+          if (b.stereo === stereo) { const tmp = b.a; b.a = b.b; b.b = tmp; }
+          b.order = 1;
+          b.stereo = stereo;
+        });
+        return true;
+      }
+    }
+    if (!h) {
+      const tool = CHEMDRAW_SHORTCUTS[k];
+      if (tool) { this.setTool(tool); return true; }
+    }
+    return false;
   }
 
   // ---------- keyboard ----------
@@ -1152,7 +1327,9 @@ export class Editor {
     if (mod && e.key === '-') { e.preventDefault(); this.zoomBy(1 / 1.2); return; }
     if (mod && e.key === '0') { e.preventDefault(); this.fitView(); return; }
     if (mod) return;
+    if (this.drawStyle === 'chemdraw' && this.chemdrawKey(e)) { e.preventDefault(); return; }
     if (e.key === 'Escape') {
+      this.typeAhead = null;
       this.sel.clear();
       this.closeInput();
       this.setTool({ kind: 'select' });
