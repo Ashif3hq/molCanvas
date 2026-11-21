@@ -1,5 +1,5 @@
 import './style.css';
-import { Editor, Tool } from './editor';
+import { DrawStyle, Editor, Tool } from './editor';
 import { fromSmiles, isElement, properties, toMolfile, toSmiles } from './chem';
 import { ICONS } from './icons';
 import { CATEGORIES, Preset, PRESETS } from './presets';
@@ -66,6 +66,7 @@ function presetFrag(p: Preset): Doc {
   }
   return d;
 }
+editor.labelNames = () => [...ABBREV.keys()];
 editor.abbreviation = (label) => {
   const p = ABBREV.get(label);
   return p ? presetFrag(p) : null;
@@ -166,12 +167,36 @@ const themeBtn = iconButton('moon', 'Toggle dark mode', () => {
   renderLibrary();
 });
 themeBtn.id = 'theme-btn';
+
+// ChemDraw-style drawing: an opt-in, keyboard-first way of drawing; the choice is remembered.
+const DRAW_STYLE_KEY = 'molcanvas.drawStyle';
+const drawStyleBtn = iconButton('keyboard', 'ChemDraw-style drawing (on/off)', () => {
+  setDrawStyle(editor.drawStyle === 'chemdraw' ? 'classic' : 'chemdraw', true);
+}, 'ChemDraw-style');
+drawStyleBtn.id = 'draw-style-btn';
+function setDrawStyle(style: DrawStyle, announce: boolean) {
+  editor.setDrawStyle(style);
+  const on = style === 'chemdraw';
+  drawStyleBtn.classList.toggle('active', on);
+  drawStyleBtn.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem(DRAW_STYLE_KEY, style); } catch { /* ignore */ }
+  if (announce) toast(on
+    ? 'ChemDraw-style drawing on: hover an atom and type a label, drag bonds into chains, number keys add bonds and rings.'
+    : 'ChemDraw-style drawing off: back to the classic MolCanvas behaviour.');
+}
+explainOnHover(drawStyleBtn, 'ChemDraw-style drawing', 'Keyboard-first drawing for ChemDraw users. Hover an atom and type its label: O, N, Cl, Br, or groups like OMe, CO2H, Ph. Hover an atom and press 1, 2 or 3 to grow a single, double or triple bond, or 4–8 to add a ring. Hover a bond and press 4–8 to fuse a ring (R fuses benzene), W/H/Y for wedge, hash or wavy. Drag the single-bond tool past one bond length to grow a zig-zag chain. With nothing under the pointer, single keys pick tools: W wedge, H hash, X eraser, 4–8 rings, + − charges, . radical. Your choice is remembered.');
+{
+  let saved: string | null = null;
+  try { saved = localStorage.getItem(DRAW_STYLE_KEY); } catch { /* storage unavailable */ }
+  setDrawStyle(saved === 'chemdraw' ? 'chemdraw' : 'classic', false);
+}
 $('view-actions').append(
   iconButton('zoomOut', `Zoom out (${mod}-)`, () => editor.zoomBy(1 / 1.25)),
   iconButton('fit', `Fit to window (${mod}0)`, () => editor.fitView()),
   iconButton('zoomIn', `Zoom in (${mod}+)`, () => editor.zoomBy(1.25)),
   colorBtn,
   lonePairBtn,
+  drawStyleBtn,
   themeBtn,
 );
 applyTheme();
